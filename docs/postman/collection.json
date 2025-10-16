@@ -1,0 +1,28 @@
+{
+  "info": {
+    "name": "Events Platform - Backend",
+    "_postman_id": "3d8c3e0b-1111-2222-3333-444455556666",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8080" },
+    { "key": "ml_url", "value": "http://localhost:5000" },
+    { "key": "email", "value": "test@example.com" },
+    { "key": "password", "value": "pass123" },
+    { "key": "token", "value": "" },
+    { "key": "eventId", "value": "" },
+    { "key": "holdId", "value": "" }
+  ],
+  "item": [
+    { "name": "Gateway Health", "request": { "method": "GET", "url": "{{base_url}}/health" } },
+    { "name": "Auth Signup", "request": { "method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "url": "{{base_url}}/api/auth/signup", "body": {"mode":"raw","raw":"{\"email\":\"{{email}}\",\"password\":\"{{password}}\"}"} }, "event": [{"listen":"test","script":{"exec":["const json=pm.response.json(); if(json.token) pm.collectionVariables.set('token', json.token);"]}}] },
+    { "name": "Auth Login", "request": { "method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "url": "{{base_url}}/api/auth/login", "body": {"mode":"raw","raw":"{\"email\":\"{{email}}\",\"password\":\"{{password}}\"}"} }, "event": [{"listen":"test","script":{"exec":["const json=pm.response.json(); if(json.token) pm.collectionVariables.set('token', json.token);"]}}] },
+    { "name": "Events Create", "request": { "method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "url": "{{base_url}}/api/events", "body": {"mode":"raw","raw":"{\"title\":\"Sample Event\",\"description\":\"\",\"date\":\"2025-12-01\",\"location\":\"Venue\",\"tags\":[\"tag\"]}"} } },
+    { "name": "Events List", "request": { "method": "GET", "url": "{{base_url}}/api/events" } },
+    { "name": "Orders Seats", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{token}}"}], "url": "{{base_url}}/api/orders/seats/{{eventId}}" } },
+    { "name": "Orders Hold", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{token}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{base_url}}/api/orders/holds", "body": {"mode":"raw","raw":"{\"eventId\":\"{{eventId}}\",\"seatIds\":[\"R1-S1\"]}"} }, "event": [{"listen":"test","script":{"exec":["const json=pm.response.json(); if(json.holdId) pm.collectionVariables.set('holdId', json.holdId);"]}}] },
+    { "name": "Orders Hold TTL", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{token}}"}], "url": "{{base_url}}/api/orders/holds/{{holdId}}/ttl" } },
+    { "name": "Orders Hold Refresh", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{token}}"},{"key":"Content-Type","value":"application/json"}], "url": "{{base_url}}/api/orders/holds/{{holdId}}/refresh", "body": {"mode":"raw","raw":"{\"extendSeconds\":180}"} } },
+    { "name": "Orders Purchase", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{token}}"},{"key":"Content-Type","value":"application/json"},{"key":"Idempotency-Key","value":"demo-1"}], "url": "{{base_url}}/api/orders/purchase", "body": {"mode":"raw","raw":"{\"eventId\":\"{{eventId}}\",\"holdId\":\"{{holdId}}\",\"seatIds\":[\"R1-S1\"]}"} } }
+  ]
+}

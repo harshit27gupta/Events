@@ -1,0 +1,24 @@
+{
+  "name": "events-platform",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm -ws run build",
+    "dev": "npm -ws --if-present run dev",
+    "start": "npm -ws --if-present run start",
+    "lint": "npm -ws --if-present run lint"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.12"
+  }
+}
+
+

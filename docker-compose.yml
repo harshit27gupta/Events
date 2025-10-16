@@ -1,0 +1,168 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: events_mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    command: ["mongod", "--quiet", "--logpath", "/dev/null"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+  redis:
+    image: redis:7
+    container_name: events_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: events_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    container_name: events_gateway
+    depends_on:
+      auth:
+        condition: service_healthy
+      events:
+        condition: service_healthy
+      orders:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=development
+      - PORT=8080
+      - AUTH_SERVICE_URL=http://auth:4001
+      - EVENTS_SERVICE_URL=http://events:4002
+      - ORDERS_SERVICE_URL=http://orders:4003
+      - REDIS_URL=redis://redis:6379
+      - SERVICE_NAME=gateway
+      - LOG_LEVEL=warn
+      - JWT_SECRET=devsecret
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  auth:
+    build:
+      context: .
+      dockerfile: services/auth/Dockerfile
+    container_name: events_auth
+    environment:
+      - NODE_ENV=development
+      - PORT=4001
+      - MONGO_URL=mongodb://mongo:27017/auth
+      - JWT_SECRET=devsecret
+      - SERVICE_NAME=auth
+      - LOG_LEVEL=warn
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4001/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  events:
+    build:
+      context: .
+      dockerfile: services/events/Dockerfile
+    container_name: events_events
+    environment:
+      - NODE_ENV=development
+      - PORT=4002
+      - MONGO_URL=mongodb://mongo:27017/events
+      - SERVICE_NAME=events
+      - LOG_LEVEL=warn
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4002/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  orders:
+    build:
+      context: .
+      dockerfile: services/orders/Dockerfile
+    container_name: events_orders
+    environment:
+      - NODE_ENV=development
+      - PORT=4003
+      - MONGO_URL=mongodb://mongo:27017/orders
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - SERVICE_NAME=orders
+      - REDIS_URL=redis://redis:6379
+      - HOLD_TTL_SECONDS=300
+      - LOG_LEVEL=warn
+    depends_on:
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4003/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  ml-service:
+    build: ./services/ml-service
+    container_name: events_ml
+    environment:
+      - PORT=5000
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  web:
+    build: ./apps/web
+    container_name: events_web
+    environment:
+      - VITE_API_URL=http://localhost:8080
+    ports:
+      - "5173:5173"
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+
+
