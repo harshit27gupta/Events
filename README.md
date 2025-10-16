@@ -125,7 +125,5 @@ Import `docs/postman/collection.json`. Run top-to-bottom:
 - Search/indexing, analytics, notifications
 - Web UI (Next: login, events list/detail, seat picker, checkout)
 
-## License
-MIT
 
 
