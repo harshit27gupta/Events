@@ -3,7 +3,7 @@ WORKDIR /app
 COPY package.json ./
 COPY packages/common/package.json packages/common/package.json
 COPY services/events/package.json services/events/package.json
-RUN npm install --workspaces || npm install --no-package-lock --workspaces
+RUN npm ci --workspaces || npm install --no-package-lock --workspaces
 
 FROM node:20-alpine AS build
 WORKDIR /app
@@ -18,6 +18,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app /app
 EXPOSE 4002
+USER node
 CMD ["node", "services/events/dist/index.js"]
 
 

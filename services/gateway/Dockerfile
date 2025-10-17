@@ -8,7 +8,7 @@ COPY services/auth/package.json services/auth/package.json
 COPY services/events/package.json services/events/package.json
 COPY services/orders/package.json services/orders/package.json
 COPY apps/web/package.json apps/web/package.json
-RUN npm install --workspaces || npm install --no-package-lock --workspaces
+RUN npm ci --workspaces || npm install --no-package-lock --workspaces
 
 FROM node:20-alpine AS build
 WORKDIR /app
@@ -25,6 +25,7 @@ ENV NODE_ENV=production
 # Copy entire repo (built) so workspace links resolve
 COPY --from=build /app /app
 EXPOSE 8080
+USER node
 CMD ["node", "services/gateway/dist/index.js"]
 
 

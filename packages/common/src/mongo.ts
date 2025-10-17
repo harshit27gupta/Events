@@ -17,4 +17,8 @@ export async function getMongoDb(url: string): Promise<Db> {
   return dbCache[dbName];
 }
 
+export function getMongoClient(): MongoClient | null {
+  return client;
+}
+
 

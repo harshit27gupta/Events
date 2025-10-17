@@ -1,6 +1,7 @@
 import express from 'express';
-import { getLogger, getMongoDb } from '@events/common';
+import { getLogger, getMongoDb, parseCookies, verifyToken } from '@events/common';
 import { ObjectId } from 'mongodb';
+import { z } from 'zod';
 
 type Event = { _id?: any; title: string; description?: string; date: string; location?: string; organizerId?: string; tags?: string[] };
 
@@ -30,15 +31,39 @@ app.get('/events', async (_req, res) => {
   res.json(normalized);
 });
 
-app.post('/events', async (req, res) => {
-  const { title, description, date, location, tags } = req.body || {};
-  if (!title || !date) return res.status(400).json({ error: 'title and date are required' });
+const createEventSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().max(2000).optional().nullable(),
+  date: z.string().min(1),
+  location: z.string().max(500).optional().nullable(),
+  tags: z.array(z.string()).optional().default([]),
+});
+
+function requireRole(req: any, res: any, next: any) {
+  const header = (req.headers['authorization'] as string) || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : (parseCookies(req.headers['cookie'] as string | undefined)['access_token'] || null);
+  if (!token) return res.status(401).json({ error: 'missing token' });
+  try {
+    const decoded: any = verifyToken(token, process.env.JWT_SECRET || 'devsecret');
+    req.user = decoded;
+    if (!['organizer', 'admin'].includes(decoded?.role)) return res.status(403).json({ error: 'forbidden' });
+    next();
+  } catch {
+    return res.status(401).json({ error: 'invalid token' });
+  }
+}
+
+app.post('/events', requireRole, async (req, res) => {
+  const parsed = createEventSchema.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  const { title, description, date, location, tags } = parsed.data as any;
   const event: any = {
     title,
     description: description ?? null,
     date,
     location: location ?? null,
-    tags: Array.isArray(tags) ? tags : []
+    tags: Array.isArray(tags) ? tags : [],
+    organizerId: (req as any).user?.userId || null,
   };
   const result = await eventsCol.insertOne(event);
   res.status(201).json({ _id: result.insertedId, ...event });
@@ -62,9 +87,19 @@ app.get('/events/:id', async (req, res) => {
   }
 });
 
-app.put('/events/:id', async (req, res) => {
+const updateEventSchema = z.object({
+  title: z.string().min(1).optional(),
+  description: z.string().max(2000).optional().nullable(),
+  date: z.string().min(1).optional(),
+  location: z.string().max(500).optional().nullable(),
+  tags: z.array(z.string()).optional(),
+});
+
+app.put('/events/:id', requireRole, async (req, res) => {
   const id = req.params.id;
-  const update = req.body || {};
+  const parsed = updateEventSchema.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  const update = parsed.data;
   try {
     const r = await eventsCol.findOneAndUpdate({ _id: new ObjectId(id) }, { $set: update }, { returnDocument: 'after' });
     if (!r || !r.value) return res.status(404).json({ error: 'not found' });
@@ -74,7 +109,7 @@ app.put('/events/:id', async (req, res) => {
   }
 });
 
-app.delete('/events/:id', async (req, res) => {
+app.delete('/events/:id', requireRole, async (req, res) => {
   const id = req.params.id;
   try {
     const r = await eventsCol.deleteOne({ _id: new ObjectId(id) });

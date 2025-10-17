@@ -1,7 +1,9 @@
 import express from 'express';
-import { getLogger, getMongoDb, getRedis } from '@events/common';
+import { getLogger, getMongoDb, getRedis, getMongoClient } from '@events/common';
 import { ObjectId } from 'mongodb';
 import { randomUUID } from 'crypto';
+import jwt from 'jsonwebtoken';
+import { z } from 'zod';
 
 const app = express();
 const logger = getLogger();
@@ -9,6 +11,7 @@ const PORT = parseInt(process.env.PORT || '4003', 10);
 const MONGO_URL = process.env.MONGO_URL || 'mongodb://localhost:27017/orders';
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const HOLD_TTL_SECONDS = parseInt(process.env.HOLD_TTL_SECONDS || '300', 10);
+const JWT_SECRET = process.env.JWT_SECRET || 'devsecret';
 
 app.use(express.json());
 
@@ -16,11 +19,25 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'orders' });
 });
 
+function requireAuth(req: any, res: any, next: any) {
+  const authHeader = (req.headers['authorization'] as string) || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  if (!token) return res.status(401).json({ error: 'missing token' });
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch {
+    return res.status(401).json({ error: 'invalid token' });
+  }
+}
+
 type Seat = { seatId: string; row: number; number: number; state: 'reserved' };
 type SeatDoc = { _id?: any; eventId: ObjectId; seats: Seat[] };
 
 let db: any;
 let seatsCol: any;
+let ordersCol: any;
 let redis: any;
 
 function seatKey(eventId: string, seatId: string) {
@@ -63,7 +80,7 @@ app.get('/seats/:eventId', async (req, res) => {
   res.json({ eventId, seats: result });
 });
 
-app.post('/holds', async (req, res) => {
+app.post('/holds', requireAuth, async (req, res) => {
   const { eventId, seatIds } = req.body || {};
   if (!eventId || !Array.isArray(seatIds) || seatIds.length === 0) return res.status(400).json({ error: 'eventId and seatIds required' });
   if (!ObjectId.isValid(eventId)) return res.status(400).json({ error: 'invalid eventId' });
@@ -119,7 +136,7 @@ app.get('/holds/:holdId/ttl', async (req, res) => {
 });
 
 // Refresh a hold TTL atomically
-app.post('/holds/:holdId/refresh', async (req, res) => {
+app.post('/holds/:holdId/refresh', requireAuth, async (req, res) => {
   const { holdId } = req.params;
   const { extendSeconds } = req.body || {};
   const extra = parseInt(extendSeconds || HOLD_TTL_SECONDS, 10);
@@ -133,32 +150,75 @@ app.post('/holds/:holdId/refresh', async (req, res) => {
   res.json({ holdId, ttl: extra });
 });
 
-app.post('/purchase', async (req, res) => {
-  const { eventId, holdId, seatIds } = req.body || {};
+// Simulated payments
+const intentSchema = z.object({ amount: z.number().positive(), currency: z.string().min(1) });
+app.post('/payments/intent', requireAuth, async (req, res) => {
+  const parsed = intentSchema.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  const paymentIntentId = `pi_${randomUUID()}`;
+  const clientSecret = `secret_${randomUUID()}`;
+  await redis.set(`pi:${paymentIntentId}`, JSON.stringify({ status: 'requires_confirmation', clientSecret }), 'EX', 900);
+  res.status(201).json({ paymentIntentId, clientSecret, status: 'requires_confirmation' });
+});
+
+const confirmSchema = z.object({ paymentIntentId: z.string().min(1), clientSecret: z.string().min(1) });
+app.post('/payments/confirm', requireAuth, async (req, res) => {
+  const parsed = confirmSchema.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  const { paymentIntentId, clientSecret } = parsed.data;
+  const raw = await redis.get(`pi:${paymentIntentId}`);
+  if (!raw) return res.status(404).json({ error: 'paymentIntent not found' });
+  const pi = JSON.parse(raw);
+  if (pi.clientSecret !== clientSecret) return res.status(401).json({ error: 'invalid client secret' });
+  await redis.set(`pi:${paymentIntentId}`, JSON.stringify({ ...pi, status: 'succeeded' }), 'EX', 900);
+  res.json({ paymentIntentId, status: 'succeeded' });
+});
+
+const purchaseSchema = z.object({ eventId: z.string().min(1), holdId: z.string().min(1), seatIds: z.array(z.string()).min(1), paymentIntentId: z.string().min(1) });
+app.post('/purchase', requireAuth, async (req, res) => {
+  const parsed = purchaseSchema.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  const { eventId, holdId, seatIds, paymentIntentId } = parsed.data as any;
   const idempotencyKey = (req.headers['idempotency-key'] as string) || '';
-  if (!eventId || !holdId || !Array.isArray(seatIds) || seatIds.length === 0) return res.status(400).json({ error: 'eventId, holdId, seatIds required' });
   if (!ObjectId.isValid(eventId)) return res.status(400).json({ error: 'invalid eventId' });
   if (idempotencyKey) {
     const cached = await redis.get(`idem:${idempotencyKey}`);
     if (cached) return res.status(201).send(JSON.parse(cached));
   }
+  // payment check
+  const piRaw = await redis.get(`pi:${paymentIntentId}`);
+  if (!piRaw) return res.status(400).json({ error: 'paymentIntent missing' });
+  const pi = JSON.parse(piRaw);
+  if (pi.status !== 'succeeded') return res.status(402).json({ error: 'payment required' });
   // verify holds
   for (const sid of seatIds) {
     const v = await redis.get(seatKey(eventId, sid));
     if (v !== holdId) return res.status(409).json({ error: 'hold missing', seatId: sid });
   }
-  // reserve in DB
-  const doc: SeatDoc | null = await seatsCol.findOne({ eventId: new ObjectId(eventId) });
-  if (!doc) return res.status(404).json({ error: 'event seats not found' });
-  const nextSeats = doc.seats.map(s => seatIds.includes(s.seatId) ? { ...s, state: 'reserved' as const } : s);
-  await seatsCol.updateOne({ _id: doc._id }, { $set: { seats: nextSeats } });
+  // transactional reserve in DB and create order
+  const client = getMongoClient();
+  const session = client?.startSession();
+  let response: any;
+  await session?.withTransaction(async () => {
+    const doc: SeatDoc | null = await seatsCol.findOne({ eventId: new ObjectId(eventId) }, { session });
+    if (!doc) throw Object.assign(new Error('event seats not found'), { status: 404 });
+    const reservedSet = new Set(doc.seats.filter(s => s.state === 'reserved').map(s => s.seatId));
+    for (const sid of seatIds) {
+      if (reservedSet.has(sid)) throw Object.assign(new Error('seat already reserved'), { status: 409 });
+    }
+    const nextSeats = doc.seats.map(s => seatIds.includes(s.seatId) ? { ...s, state: 'reserved' as const } : s);
+    await seatsCol.updateOne({ _id: doc._id }, { $set: { seats: nextSeats } }, { session });
+    const orderId = randomUUID();
+    const orderDoc = { _id: orderId, userId: (req as any).user?.userId, eventId: new ObjectId(eventId), seatIds, paymentIntentId, status: 'reserved', createdAt: new Date() };
+    await ordersCol.insertOne(orderDoc, { session });
+    response = { orderId, eventId, seatIds, status: 'reserved' };
+  });
+  await session?.endSession();
   // clear holds
   const setKey = holdSetKey(holdId);
   const keys = await redis.smembers(setKey);
   if (keys.length) await redis.del(...keys);
   await redis.del(setKey);
-  const orderId = randomUUID();
-  const response = { orderId, eventId, seatIds, status: 'reserved' };
   if (idempotencyKey) await redis.set(`idem:${idempotencyKey}`, JSON.stringify(response), 'EX', 600);
   res.status(201).json(response);
 });
@@ -167,6 +227,8 @@ async function start() {
   db = await getMongoDb(MONGO_URL);
   seatsCol = db.collection('seats');
   await seatsCol.createIndex({ eventId: 1 });
+  ordersCol = db.collection('orders');
+  await ordersCol.createIndex({ userId: 1, createdAt: -1 });
   redis = getRedis(REDIS_URL);
   app.listen(PORT, () => logger.info({ PORT }, 'Orders listening'));
 }

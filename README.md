@@ -3,29 +3,34 @@
 Production-grade microservices backend for an AI‑powered events and ticketing platform.
 
 ## Highlights
-- API Gateway (Node/Express, TypeScript) with circuit breaker and JWT auth
-- Microservices: `auth`, `events`, `orders` (seats/holds/purchase), `ml-service` (FastAPI)
-- Infra: MongoDB (per service), Redis (cache/locks), RabbitMQ (ready), Docker Compose
-- Design patterns: Singleton, Repository, Strategy, Factory, Circuit Breaker, Idempotency
-- Seat selection with atomic holds in Redis, TTL, refresh, and consistent reservations
+- API Gateway (Node/Express, TypeScript) hardened with Helmet, CORS (credentials), rate limits, circuit breaker
+- Auth: Cookie-based sessions (HttpOnly access + rotating refresh in Redis), logout, refresh, zod validation, rate limits
+- Events: CRUD with RBAC (organizer/admin), payload validation, organizer ownership
+- Orders: Seats/holds with Redis TTL, idempotent purchase, Mongo transaction, simulated payments (intent + confirm)
+- Infra: MongoDB (per service), Redis, RabbitMQ (ready), Docker Compose
+- Patterns: Singleton, Repository, Circuit Breaker, Idempotency, Transactional writes
 
 ## Architecture (HLD)
 ```
-┌───────────┐     ┌──────────────┐     ┌─────────┐
-│  Web/UI   │ ──► │   Gateway    │ ──► │  Auth   │  (JWT issue/verify)
-└───────────┘     │  (Express)   │     └─────────┘
-                   │  /api/*      │
-                   │  JWT guard   │ ──► │ Events  │  (CRUD)
-                   │  Circuit Brk │     └─────────┘
-                   │              │ ──► │ Orders  │  (seats/holds/purchase)
-                   └──────┬───────┘     └─────────┘
-                          │
-                          ▼
-                      ┌─────────┐
-                      │  ML API │  (recs/related — FastAPI)
-                      └─────────┘
+┌───────────┐        ┌───────────────────────────────────────┐        ┌─────────┐
+│  Web/UI   │◄──────►│  Gateway (Express, BFF)               │◄──────►│  Auth   │
+│ (cookies) │        │  - CORS (credentials)                 │        │ (JWT)   │
+└───────────┘        │  - Helmet, rate limits                │        └─────────┘
+                     │  - Cookie→Authorization bridge        │
+                     │  - RBAC: events mutations             │        ┌─────────┐
+                     └──────────────┬────────────────────────┘        │ Events  │
+                                    │                                 │  CRUD   │
+                                    ▼                                 └─────────┘
+                              ┌──────────┐
+                              │  Orders  │  (holds, payments, purchase)
+                              └──────────┘
 
-MongoDB (per service)   Redis (cache/locks)   RabbitMQ (events bus; future)
+Data plane
+- MongoDB (per service DB): users, events, seats, orders
+- Redis: seat holds, idempotency cache, refresh tokens, payment intents (sim)
+- RabbitMQ: provisioned for future domain events
+
+ML Service (FastAPI) available; can be proxied via gateway if needed
 ```
 
 ## Tech Stack
@@ -52,24 +57,29 @@ Health
 
 ## API Overview (via Gateway)
 
-Auth
-- `POST /api/auth/signup` → { email, password, name } → { token }
-- `POST /api/auth/login` → { email, password } → { token }
-- `GET /api/auth/me` (Bearer)
+Auth (cookies)
+- `POST /api/auth/signup` → sets HttpOnly `access_token` + `refresh_token`
+- `POST /api/auth/login` → sets cookies (rotate refresh)
+- `POST /api/auth/refresh` → rotates refresh, sets new cookies
+- `POST /api/auth/logout` → revokes refresh, clears cookies
+- `GET /api/auth/me` → reads access token (cookie or Bearer)
 
 Events
-- `GET /api/events` → list
-- `POST /api/events` → { title, description|null, date, location|null, tags[] }
+- `GET /api/events` → list (public)
+- `POST /api/events` → create (organizer/admin); body: { title, description|null, date, location|null, tags[] }
 - `GET /api/events/:id`
-- `PUT /api/events/:id`
-- `DELETE /api/events/:id`
+- `PUT /api/events/:id` → update (organizer/admin)
+- `DELETE /api/events/:id` → delete (organizer/admin)
+Notes: payloads validated, `organizerId` set on create
 
-Orders (Bearer required)
+Orders (auth required via gateway)
 - `GET /api/orders/seats/:eventId` → 5×10 grid; states: available|held|reserved
 - `POST /api/orders/holds` → { eventId, seatIds[] } → { holdId, expiresInSeconds }
 - `GET /api/orders/holds/:holdId/ttl` → remaining seconds
 - `POST /api/orders/holds/:holdId/refresh` → { extendSeconds? } → new ttl
-- `POST /api/orders/purchase` → { eventId, holdId, seatIds[] } → { orderId, status }
+- `POST /api/orders/payments/intent` → { amount, currency } → { paymentIntentId, clientSecret, status }
+- `POST /api/orders/payments/confirm` → { paymentIntentId, clientSecret } → { status: "succeeded" }
+- `POST /api/orders/purchase` → { eventId, holdId, seatIds[], paymentIntentId } → { orderId, status }
   - Optional header `Idempotency-Key: <uuid>` for safe retries
 
 ML (direct)
@@ -81,6 +91,8 @@ ML (direct)
 - Purchase verifies every seat key exists and matches the `holdId`; otherwise 409 and no reservation
 - Refresh: extend TTL for all held seats atomically
 - Idempotent purchase: cache success by `Idempotency-Key` (10 minutes)
+- Transactional reservation: Mongo session updates seats and creates an `orders` record atomically
+- Simulated payments: intent + confirm tracked in Redis; purchase requires `status = succeeded`
 
 ## Project Structure
 ```
@@ -111,21 +123,24 @@ uvicorn services.ml-service.app.main:app --host 0.0.0.0 --port 5000
 Compose sets sane defaults. Key vars:
 - `JWT_SECRET` (gateway, auth)
 - `MONGO_URL` per service
-- `REDIS_URL` (orders, gateway)
+- `REDIS_URL` (orders, gateway, auth)
 - `HOLD_TTL_SECONDS` (orders; default 300)
+- `CORS_ORIGINS` (gateway; comma‑separated origins; credentials enabled)
+- Cookie/session (auth):
+  - `ACCESS_TOKEN_TTL_SECONDS` (default 900)
+  - `REFRESH_TOKEN_TTL_SECONDS` (default 1209600)
+  - `COOKIE_DOMAIN`, `COOKIE_SECURE` (set `false` in local)
 
 ## Postman
-Import `docs/postman/collection.json`. Run top-to-bottom:
-1) Auth (Signup/Login) → token
-2) Create events → copy `_id` to `{{eventId}}`
-3) Seats → Holds → TTL/Refresh → Purchase (optionally add `Idempotency-Key`)
+Import `docs/postman/collection.json` (or follow steps):
+1) Auth (Signup/Login) → cookies set; enable “Send cookies”
+2) Promote user to `organizer` (temporary) → create event → save `_id` as `{{eventId}}`
+3) Seats → Holds → Payments: intent + confirm → Purchase (add `Idempotency-Key`)
 
 ## Roadmap
-- Payments adapter (Stripe) behind Strategy, Sagas/Outbox
+- Payments adapter (Stripe/Razorpay) behind Strategy, Sagas/Outbox
 - Search/indexing, analytics, notifications
 - Web UI (Next: login, events list/detail, seat picker, checkout)
 
-## License
-MIT
 
 
