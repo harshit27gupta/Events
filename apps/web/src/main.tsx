@@ -8,6 +8,8 @@ import { Toaster, toast } from 'sonner'
 import './index.css'
 import { EventsList } from './features/events/EventsList'
 import { OrdersPage } from './features/orders/OrdersPage'
+import { EventDetail } from './features/events/EventDetail'
+import { SeatsPage } from './features/seats/SeatsPage'
 
 const Home = () => (
   <div style={{ padding: 24 }}>
@@ -35,6 +37,8 @@ const router = createBrowserRouter([
       { index: true, element: <Home /> },
       { path: 'health', element: <Health /> },
       { path: 'events', element: <EventsList /> },
+      { path: 'events/:id', element: <EventDetail /> },
+      { path: 'events/:id/seats', element: <SeatsPage /> },
       { path: 'orders', element: <OrdersPage /> },
     ]
   }
