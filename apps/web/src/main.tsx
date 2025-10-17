@@ -1,6 +1,13 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider, Link } from 'react-router-dom'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { queryClient } from './lib/query'
+import { AppShell } from './app/AppShell'
+import { Toaster, toast } from 'sonner'
+import './index.css'
+import { EventsList } from './features/events/EventsList'
+import { OrdersPage } from './features/orders/OrdersPage'
 
 const Home = () => (
   <div style={{ padding: 24 }}>
@@ -21,13 +28,24 @@ const Health = () => {
 }
 
 const router = createBrowserRouter([
-  { path: '/', element: <Home /> },
-  { path: '/health', element: <Health /> },
+  {
+    path: '/',
+    element: <AppShell />,
+    children: [
+      { index: true, element: <Home /> },
+      { path: 'health', element: <Health /> },
+      { path: 'events', element: <EventsList /> },
+      { path: 'orders', element: <OrdersPage /> },
+    ]
+  }
 ])
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+      <Toaster richColors theme="dark" />
+    </QueryClientProvider>
   </React.StrictMode>
 )
 

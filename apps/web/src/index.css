@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-neutral-950 text-neutral-100 bg-bg-noise;
+}
+
+.glass {
+  @apply backdrop-blur-xs bg-neutral-900/50 border border-white/10 shadow-glass rounded-xl;
+}
+
+
