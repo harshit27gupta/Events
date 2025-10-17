@@ -2,6 +2,8 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { EventCard } from './EventCard';
+import { useActiveHold } from '../seats/useActiveHold';
+import { Link } from 'react-router-dom';
 
 export function EventsList() {
   const { data, isLoading, error } = useQuery({
@@ -9,6 +11,7 @@ export function EventsList() {
     queryFn: async () => (await api.get('/api/events')).data
   });
   const [q, setQ] = React.useState('');
+  const active = useActiveHold();
 
   if (isLoading) {
     return (
@@ -33,6 +36,12 @@ export function EventsList() {
   }
   return (
     <>
+      {active.isActive && (
+        <div className="glass p-4 mb-4 flex items-center justify-between">
+          <div className="text-sm text-neutral-300">You have a seat hold in progress. Time left {String(Math.floor(active.ttl / 60)).padStart(2,'0')}:{String(active.ttl % 60).padStart(2,'0')}</div>
+          <Link to={`/events/${active.eventId}/seats`} className="px-3 py-1.5 rounded-md bg-brand-600 hover:bg-brand-500 text-sm">Continue booking</Link>
+        </div>
+      )}
       <div className="mb-4">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search events…" className="w-full sm:w-80 bg-neutral-800/60 border border-white/10 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-brand-500" />
       </div>
