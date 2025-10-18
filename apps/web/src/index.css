@@ -21,6 +21,52 @@ body {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 8px 32px rgba(0,0,0,0.4);
 }
 
+/* Holographic utilities */
+.glass-holo {
+  position: relative;
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+.glass-holo:before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(from var(--tw-gradient-angle,0deg), #7dd3fc, #a78bfa, #f0abfc, #22d3ee, #7dd3fc);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: aurora 8s linear infinite;
+  opacity: .5;
+}
+.glow-cyan { box-shadow: 0 0 0 1px rgba(34,211,238,0.25), 0 0 40px rgba(34,211,238,0.18); }
+.glow-amber { box-shadow: 0 0 0 1px rgba(255,140,0,0.28), 0 0 40px rgba(255,201,60,0.22); }
+.glow-rose { box-shadow: 0 0 0 1px rgba(244,63,94,0.25), 0 0 40px rgba(244,63,94,0.18); }
+.glow-magenta { box-shadow: 0 0 0 1px rgba(182,46,255,0.35), 0 0 42px rgba(255,76,110,0.22); }
+.glow-reserved { box-shadow: 0 0 0 1px rgba(65,88,208,0.35), 0 0 42px rgba(200,80,192,0.22); }
+
+/* Holographic seat/state backgrounds */
+.holo-available { background-image: linear-gradient(135deg, #00F5A0 0%, #00D9F5 100%); box-shadow: inset 0 2px 8px rgba(0,0,0,0.18); }
+.holo-held { background-image: linear-gradient(135deg, #FFC93C 0%, #FF8C00 100%); }
+.holo-reserved { background-image: linear-gradient(135deg, #C850C0 0%, #4158D0 100%); }
+.holo-selected { background-image: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); }
+
+/* Scan line utility */
+.scan-line { background: linear-gradient(180deg, transparent, rgba(255,255,255,0.35), transparent); }
+
+/* Ripple ring utility */
+.ripple-ring { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; animation: ripple 800ms ease-out forwards; background: radial-gradient(closest-side, rgba(255,255,255,0.25), rgba(255,255,255,0)); }
+
+/* Reduced motion fallbacks */
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+  .glow-cyan, .glow-amber, .glow-rose { box-shadow: none; }
+}
+
 /* Fluid container with XL/2XL padding */
 .container-fluid {
   @apply w-full mx-auto px-4 sm:px-6 lg:px-8 xl:px-12;

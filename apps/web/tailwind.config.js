@@ -6,6 +6,35 @@ export default {
   ],
   theme: {
     extend: {
+      animation: {
+        breathe: 'breathe 3s ease-in-out infinite',
+        shimmer: 'shimmer 2.5s linear infinite',
+        scan: 'scan 4s linear infinite',
+        aurora: 'aurora 6s linear infinite',
+        ripple: 'ripple 800ms ease-out'
+      },
+      keyframes: {
+        breathe: {
+          '0%, 100%': { transform: 'scale(1)' },
+          '50%': { transform: 'scale(1.02)' }
+        },
+        shimmer: {
+          '0%': { backgroundPosition: '0% 50%' },
+          '100%': { backgroundPosition: '200% 50%' }
+        },
+        scan: {
+          '0%': { transform: 'translateY(-100%)' },
+          '100%': { transform: 'translateY(100%)' }
+        },
+        aurora: {
+          '0%': { '--tw-gradient-angle': '0deg' },
+          '100%': { '--tw-gradient-angle': '360deg' }
+        },
+        ripple: {
+          '0%': { transform: 'scale(0.9)', opacity: '0.6' },
+          '100%': { transform: 'scale(1.15)', opacity: '0' }
+        }
+      },
       colors: {
         brand: {
           50: '#faf5ff',
@@ -41,7 +70,8 @@ export default {
         glass: 'inset 0 1px 0 0 rgba(255,255,255,0.06), 0 8px 30px rgba(0,0,0,0.3)'
       },
       backdropBlur: {
-        xs: '2px'
+        xs: '2px',
+        '3xl': '32px'
       },
       borderRadius: {
         xl: '1rem'

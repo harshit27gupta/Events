@@ -5,6 +5,7 @@ import { api } from '../../lib/api';
 import { toast } from 'sonner';
 import { getStoredHold } from './useActiveHold';
 import { motion } from 'framer-motion';
+import Seat from '../../components/Seat';
 
 type Seat = { seatId: string; row: number; number: number; state: 'available' | 'held' | 'reserved' };
 type SeatsResponse = { eventId: string; seats: Seat[] };
@@ -34,6 +35,7 @@ export function SeatsPage() {
     mutationFn: async (seatIds: string[]) => (await api.post('/api/orders/holds', { eventId, seatIds })).data as { holdId: string; expiresInSeconds: number },
     onSuccess: (data) => {
       setHoldId(data.holdId);
+      setSelected([]); // clear local selection so held seats reflect 'held' styling
       if (eventId) localStorage.setItem(`hold:${eventId}`, data.holdId);
       setTtl(data.expiresInSeconds);
       setTtlSynced(true);
@@ -138,6 +140,22 @@ export function SeatsPage() {
     qc.invalidateQueries({ queryKey: ['seats', eventId] });
   };
 
+  // UI hover and legend states (must be above conditional returns to keep hook order)
+  const [hoveredId, setHoveredId] = React.useState<string | null>(null);
+  const [legendHover, setLegendHover] = React.useState<'available' | 'held' | 'reserved' | null>(null);
+  const neighborSet = React.useMemo(() => {
+    if (!hoveredId) return new Set<string>();
+    const match = /^R(\d+)-S(\d+)$/.exec(hoveredId);
+    if (!match) return new Set<string>();
+    const r = parseInt(match[1], 10);
+    const c = parseInt(match[2], 10);
+    const neigh = new Set<string>();
+    [[r, c-1], [r, c+1], [r-1, c], [r+1, c]].forEach(([rr, cc]) => {
+      if (rr > 0 && cc > 0) neigh.add(`R${rr}-S${cc}`);
+    });
+    return neigh;
+  }, [hoveredId]);
+
   if (seatsQuery.isLoading) return <div className="glass p-6 animate-pulse">Loading seats…</div>;
   if (seatsQuery.error || !seatsQuery.data) return <div className="glass p-6">Failed to load seats.</div>;
 
@@ -153,12 +171,29 @@ export function SeatsPage() {
     return null;
   })();
 
+  const formatSeatId = (id: string) => {
+    const m = /^R(\d+)-S(\d+)$/.exec(id);
+    if (!m) return id;
+    const r = parseInt(m[1], 10);
+    const c = parseInt(m[2], 10);
+    const rowLabel = String.fromCharCode('A'.charCodeAt(0) + (r - 1));
+    return `${rowLabel}${c}`;
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-emerald-500" /> <span className="text-sm text-neutral-300">Available</span></div>
-        <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-amber-500" /> <span className="text-sm text-neutral-300">Held</span></div>
-        <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-rose-600" /> <span className="text-sm text-neutral-300">Reserved</span></div>
+    <div className="space-y-4 relative">
+      {/* Ambient glow vignette */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 opacity-70" style={{ background: 'radial-gradient(1200px 600px at 50% 0%, rgba(59,130,246,0.06), transparent 60%), radial-gradient(800px 400px at 0% 100%, rgba(34,197,94,0.05), transparent 60%), radial-gradient(800px 400px at 100% 100%, rgba(236,72,153,0.05), transparent 60%)' }} />
+      <div className="flex items-center gap-4 glass p-2 w-fit">
+        <button onMouseEnter={() => setLegendHover('available')} onMouseLeave={() => setLegendHover(null)} className="flex items-center gap-2 focus:outline-none">
+          <span className="w-3 h-3 rounded-sm holo-available glow-cyan" /> <span className="text-sm text-neutral-300">Available</span>
+        </button>
+        <button onMouseEnter={() => setLegendHover('held')} onMouseLeave={() => setLegendHover(null)} className="flex items-center gap-2 focus:outline-none">
+          <span className="w-3 h-3 rounded-sm holo-held glow-amber" /> <span className="text-sm text-neutral-300">Held</span>
+        </button>
+        <button onMouseEnter={() => setLegendHover('reserved')} onMouseLeave={() => setLegendHover(null)} className="flex items-center gap-2 focus:outline-none">
+          <span className="w-3 h-3 rounded-sm holo-reserved glow-reserved" /> <span className="text-sm text-neutral-300">Reserved</span>
+        </button>
       </div>
 
       {foreignHold && (
@@ -167,9 +202,16 @@ export function SeatsPage() {
           <Link to={`/events/${foreignHold.eventId}/seats`} className="px-3 py-1.5 rounded-md bg-brand-600 hover:bg-brand-500 text-sm">Continue booking</Link>
         </div>
       )}
-      <div className={`glass p-4 overflow-auto ${foreignHold ? 'pointer-events-none opacity-60' : ''}` }>
-        <div className="text-center text-neutral-400 text-sm mb-3">Screen</div>
-        <div className="inline-grid gap-2" style={{ gridTemplateColumns: `repeat(${cols + 1}, minmax(0, 1fr))` }}>
+      <div className={`glass p-4 overflow-auto flex flex-col items-center ${foreignHold ? 'pointer-events-none opacity-60' : ''}` }>
+        {/* Holographic stage */}
+        <div className="relative text-center text-neutral-200 mb-6">
+          <div className="mx-auto glass-holo w-full max-w-lg px-8 py-3 relative overflow-hidden">
+            <div className="absolute inset-x-0 -top-full h-16 scan-line animate-scan opacity-40" />
+            <span className="tracking-wider drop-shadow font-medium">Stage</span>
+          </div>
+          <div className="mt-2 text-xs text-neutral-400">View this side</div>
+        </div>
+        <div className="inline-grid gap-2 mx-auto" style={{ gridTemplateColumns: `repeat(${cols + 1}, minmax(0, 1fr))` }}>
           <div />
           {Array.from({ length: cols }).map((_, c) => (
             <div key={`col-${c + 1}`} className="text-center text-xs text-neutral-400">{c + 1}</div>
@@ -182,33 +224,22 @@ export function SeatsPage() {
                 {Array.from({ length: cols }).map((_, cIdx) => {
                   const c = cIdx + 1;
                   const s = byRowCol.get(`${r}-${c}`)!;
-                  const isSelected = selected.includes(s.seatId);
                   const interactive = s.state === 'available';
-                  const base = interactive ? stateColors.available : stateColors[s.state];
-                  const cls = isSelected ? 'ring-2 ring-white/80' : '';
-                  return interactive ? (
-                    <motion.button
+                  const isSelected = selected.includes(s.seatId) && !holdId; // only show 'selected' before hold is created
+                  const state: 'available' | 'held' | 'reserved' | 'selected' = isSelected ? 'selected' : s.state;
+                  return (
+                    <Seat
                       key={s.seatId}
+                      id={s.seatId}
+                      label={formatSeatId(s.seatId)}
+                      state={state}
+                      disabled={!interactive && state !== 'selected'}
                       onClick={() => toggleSeat(s)}
-                      whileHover={{ scale: 1.08 }}
-                      whileTap={{ scale: 0.92 }}
-                      disabled={!interactive}
-                      aria-label={`Row ${rowLabel(r)} Seat ${c} ${s.state}`}
-                      className={`w-8 h-8 md:w-10 md:h-10 rounded-sm text-[10px] flex items-center justify-center select-none ${base} ${cls}`}
-                      title={`${rowLabel(r)}-${c} • ${s.state}`}
-                    >
-                      {c}
-                    </motion.button>
-                  ) : (
-                    <button
-                      key={s.seatId}
-                      disabled
-                      aria-label={`Row ${rowLabel(r)} Seat ${c} ${s.state}`}
-                      className={`w-8 h-8 md:w-10 md:h-10 rounded-sm text-[10px] flex items-center justify-center select-none ${base} ${cls} disabled:opacity-40`}
-                      title={`${rowLabel(r)}-${c} • ${s.state}`}
-                    >
-                      {c}
-                    </button>
+                      onHoverRipple={(id) => setHoveredId(id)}
+                      onHoverEndRipple={() => setHoveredId(null)}
+                      neighborPulse={neighborSet.has(s.seatId) || (!!legendHover && state === legendHover)}
+                      highlight={hoveredId === s.seatId}
+                    />
                   );
                 })}
               </React.Fragment>
@@ -217,7 +248,8 @@ export function SeatsPage() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      {/* Action bar */}
+      <div className="flex items-center gap-3 sticky bottom-3 z-10">
         <button
           onClick={() => holdMutation.mutate(selected)}
           disabled={!!foreignHold || !!holdId || selected.length === 0 || holdMutation.isPending}
