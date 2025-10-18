@@ -16,6 +16,18 @@ export function OrdersPage() {
   });
   const prefersReducedMotion = useReducedMotion();
 
+  // Compute derived order lists before any conditional returns to keep hook order stable
+  const justCreated = (location.state as any)?.order;
+  const orders: any[] = Array.isArray(data?.orders) ? data!.orders : [];
+  const sortedOrders = (() => {
+    try {
+      return [...orders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } catch {
+      return orders;
+    }
+  })();
+  const primaryOrder = justCreated || sortedOrders[0];
+
   const EventTitle: React.FC<{ eventId: string }> = ({ eventId }) => {
     const { data: evt } = useQuery({
       queryKey: ['event', eventId],
@@ -65,16 +77,6 @@ export function OrdersPage() {
       </div>
     );
   }
-  const justCreated = (location.state as any)?.order;
-  const orders: any[] = Array.isArray(data?.orders) ? data!.orders : [];
-  const sortedOrders = React.useMemo(() => {
-    try {
-      return [...orders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    } catch {
-      return orders;
-    }
-  }, [orders]);
-  const primaryOrder = justCreated || sortedOrders[0];
   const ticketUrlFor = (order: any | null | undefined) => order ? `/ticket/${encodeURIComponent(order.orderId || order._id)}` : '#';
   const openTicket = React.useCallback((order: any | null | undefined) => {
     if (!order) return;
@@ -173,7 +175,7 @@ export function OrdersPage() {
       {/* Map location card removed by request */}
 
       <section className="glass p-6 lg:col-span-3">
-        <h2 className="text-xl font-semibold mb-4 flex items-center gap-2"><Package className="text-brand-400" /> Your Events</h2>
+        <h2 className="text-xl font-semibold mb-4 flex items-center gap-2"><Package className="text-brand-400" /> Bookings</h2>
         {!data?.orders?.length ? (
           <div className="text-neutral-400 text-sm">No orders yet.</div>
         ) : (
