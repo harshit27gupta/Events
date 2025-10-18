@@ -1,10 +1,11 @@
 import React from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LoginModal } from '../features/auth/LoginModal';
-import { SignupModal } from '../features/auth/SignupModal';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import AuthPortal from '../features/auth/AuthPortal';
 import { useAuth } from '../features/auth/useAuth';
 import { toast } from 'sonner';
 import { AnimatePresence, motion } from 'framer-motion';
+import { CalendarDays, Package } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 
 export function AppShell() {
   const [loginOpen, setLoginOpen] = React.useState(false);
@@ -12,6 +13,8 @@ export function AppShell() {
   const { data: me, refresh } = useAuth();
   const [offline, setOffline] = React.useState(!navigator.onLine);
   const location = useLocation();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   React.useEffect(() => {
     const on = () => setOffline(false);
@@ -30,15 +33,35 @@ export function AppShell() {
         <div className="container-fluid h-14 flex items-center justify-between">
           <Link to="/" className="font-semibold tracking-tight">events<span className="text-fuchsia-400">.ai</span></Link>
           <nav aria-label="Main navigation" className="flex items-center gap-2 text-sm">
-            <NavLink to="/events" className={({ isActive }) => `px-3 py-2 rounded-lg transition-colors ${isActive ? 'bg-white/10 text-white' : 'text-neutral-300 hover:text-white hover:bg-white/5'}`}>Events</NavLink>
-            <NavLink to="/orders" className={({ isActive }) => `px-3 py-2 rounded-lg transition-colors ${isActive ? 'bg-white/10 text-white' : 'text-neutral-300 hover:text-white hover:bg-white/5'}`}>My Orders</NavLink>
+            <NavLink to="/events" className={({ isActive }) => `px-3 py-2 rounded-lg transition-colors ${isActive ? 'bg-white/10 text-white shadow-[0_0_12px_rgba(168,85,247,0.15)]' : 'text-neutral-300 hover:text-white hover:bg-white/5'}`}>
+              <span className="inline-flex items-center gap-2"><CalendarDays className="w-4 h-4" /> Events</span>
+            </NavLink>
+            <NavLink to="/orders" className={({ isActive }) => `px-3 py-2 rounded-lg transition-colors ${isActive ? 'bg-white/10 text-white shadow-[0_0_12px_rgba(168,85,247,0.15)]' : 'text-neutral-300 hover:text-white hover:bg-white/5'}`}>
+              <span className="inline-flex items-center gap-2"><Package className="w-4 h-4" /> My Orders</span>
+            </NavLink>
             {me && (me.role === 'organizer' || me.role === 'admin') && (
               <NavLink to="/organizer/events" className={({ isActive }) => `px-3 py-2 rounded-lg transition-colors ${isActive ? 'bg-white/10 text-white' : 'text-neutral-300 hover:text-white hover:bg-white/5'}`}>Organizer</NavLink>
             )}
             {me ? (
               <div className="flex items-center gap-2">
                 <span className="text-neutral-300">{me.email}</span>
-                <form action="#" onSubmit={async (e) => { e.preventDefault(); try { await fetch((import.meta as any).env.VITE_API_URL + '/api/auth/logout', { method: 'POST', credentials: 'include' }); toast.success('Logged out'); } catch { toast.error('Logout failed'); } finally { refresh(); } }}>
+                <form
+                  action="#"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    try {
+                      await fetch((import.meta as any).env.VITE_API_URL + '/api/auth/logout', { method: 'POST', credentials: 'include' });
+                      // Clear client cache to prevent stale queries from firing with 401s
+                      try { queryClient.clear(); } catch {}
+                      // Refresh auth state and navigate to a safe route
+                      await refresh();
+                      navigate('/events');
+                      toast.success('Logged out');
+                    } catch {
+                      toast.error('Logout failed');
+                    }
+                  }}
+                >
                   <button className="text-neutral-300 hover:text-white" type="submit">Logout</button>
                 </form>
               </div>
@@ -71,8 +94,8 @@ export function AppShell() {
       <footer className="border-t border-white/10 py-8 text-xs text-neutral-400">
         <div className="container-fluid">© {new Date().getFullYear()} events.ai</div>
       </footer>
-      <LoginModal open={loginOpen} onClose={() => { setLoginOpen(false); refresh(); }} />
-      <SignupModal open={signupOpen} onClose={() => { setSignupOpen(false); refresh(); }} />
+      <AuthPortal open={loginOpen} onClose={() => { setLoginOpen(false); refresh(); }} initialMode="login" />
+      <AuthPortal open={signupOpen} onClose={() => { setSignupOpen(false); refresh(); }} initialMode="signup" />
     </div>
   );
 }

@@ -162,6 +162,18 @@ app.use('/api/orders', ordersLimiter, async (req, res) => {
   }
 });
 
+// Public ticket endpoint proxy (no auth)
+app.get('/api/public/orders/:orderId', async (req, res) => {
+  const url = `${ORDERS_SERVICE_URL}/public/orders/${encodeURIComponent(req.params.orderId)}`;
+  try {
+    const r = await axios({ url, method: 'GET' });
+    res.status(r.status).set(r.headers as any).send(r.data);
+  } catch (err: any) {
+    const status = err.response?.status || 500;
+    res.status(status).send(err.response?.data || { error: 'upstream error' });
+  }
+});
+
 app.listen(PORT, () => {
   logger.info({ PORT }, 'Gateway listening');
 });

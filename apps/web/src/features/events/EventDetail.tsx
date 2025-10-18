@@ -18,8 +18,30 @@ export function EventDetail() {
   const e: any = data;
   const stored = getStoredHold();
   const foreignHold = stored && stored.eventId !== id ? stored : null;
+  const fallbackFor = (title: string, tags: string[] | undefined) => {
+    const t = (title || '').toLowerCase();
+    const joined = (tags || []).join(' ').toLowerCase();
+    const hay = `${t} ${joined}`;
+    if (/(art|gallery|exhibit|painting)/.test(hay)) return '/images/art_image.png';
+    if (/(fashion|runway|style)/.test(hay)) return '/images/fashion_image.png';
+    if (/(food|dinner|culinary|tasting|restaurant|chef)/.test(hay)) return '/images/food_event_image.png';
+    if (/(music|concert|band|dj)/.test(hay)) return '/images/music_image.png';
+    if (/(tech|developer|conference|hack|ai|ml)/.test(hay)) return '/images/tech_image.png';
+    if (/(football|soccer)/.test(hay)) return '/images/football_image.png';
+    if (/(cricket)/.test(hay)) return '/images/cricket_image.png';
+    if (/(startup|meetup|networking|pitch)/.test(hay)) return '/images/startup_meet_image.png';
+    if (/(comedy|stand ?up|laugh)/.test(hay)) return '/images/comedy_nights_image.png';
+    return '/images/music_image.png';
+  };
   return (
     <div className="glass p-6">
+      <div className="w-full mb-4 rounded-lg overflow-hidden border border-white/10 bg-white/5">
+        <img
+          src={e.imageUrl ? (/^https?:\/\//.test(e.imageUrl) ? e.imageUrl : `/images/${String(e.imageUrl).replace(/^\/+/, '')}`) : fallbackFor(e.title, Array.isArray(e.tags) ? e.tags : undefined)}
+          alt={e.title}
+          className="w-full h-64 md:h-80 object-cover"
+        />
+      </div>
       <div className="text-sm text-neutral-300">{new Date(e.date).toLocaleString()}</div>
       <h1 className="text-2xl font-semibold mb-2">{e.title}</h1>
       {e.location && <div className="text-neutral-400 mb-4">{e.location}</div>}

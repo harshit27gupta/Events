@@ -10,6 +10,14 @@ body {
   @apply bg-neutral-950 text-neutral-100 bg-bg-noise;
 }
 
+/* Gradient mesh background utility for hyper-modern look */
+.bg-gradient-mesh {
+  background:
+    radial-gradient(at 0% 0%, rgba(168,85,247,0.08) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(34,211,238,0.06) 0px, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(236,72,153,0.04) 0px, transparent 50%);
+}
+
 /* Refined glass utilities */
 .glass {
   @apply backdrop-blur-md bg-neutral-900/40 border border-white/10 rounded-xl;
@@ -42,6 +50,7 @@ body {
           mask-composite: exclude;
   animation: aurora 8s linear infinite;
   opacity: .5;
+  pointer-events: none;
 }
 .glow-cyan { box-shadow: 0 0 0 1px rgba(34,211,238,0.25), 0 0 40px rgba(34,211,238,0.18); }
 .glow-amber { box-shadow: 0 0 0 1px rgba(255,140,0,0.28), 0 0 40px rgba(255,201,60,0.22); }
@@ -71,6 +80,93 @@ body {
 .container-fluid {
   @apply w-full mx-auto px-4 sm:px-6 lg:px-8 xl:px-12;
   max-width: min(1400px, calc(100vw - 3rem));
+}
+
+/* ======================= */
+/* Futuristic Portal UI    */
+/* ======================= */
+
+.portal-glass {
+  position: relative;
+  border-radius: 16px;
+  background: rgba(17,17,25,0.6);
+  border: 1px solid rgba(255,255,255,0.08);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 20px 60px rgba(0,0,0,0.45);
+}
+.portal-glass:before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(from var(--tw-gradient-angle,0deg), rgba(0,217,245,0.65), rgba(168,85,247,0.65), rgba(236,72,153,0.65), rgba(0,217,245,0.65));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: gradient-rotate 10s linear infinite;
+  opacity: .35;
+  pointer-events: none;
+}
+
+.energy-border {
+  position: relative;
+}
+.energy-border:after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 1px rgba(0,217,245,0.35), 0 0 36px rgba(168,85,247,0.18);
+  pointer-events: none;
+}
+
+.text-gradient-holo {
+  background: linear-gradient(135deg, #e5e7eb 0%, #a7f3d0 30%, #93c5fd 60%, #e9d5ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 24px rgba(99,102,241,0.18);
+}
+
+.focus-ring-holo {
+  box-shadow: 0 0 0 1px rgba(0,217,245,0.55), 0 0 24px rgba(0,217,245,0.25);
+}
+
+.input-holo {
+  @apply bg-neutral-900/40 border border-white/10 rounded-xl px-4 py-3 text-neutral-100 placeholder:text-neutral-500 transition-all duration-300 outline-none;
+}
+.input-holo:hover { border-color: rgba(255,255,255,0.2); }
+.input-holo:focus { border-color: transparent; }
+.input-holo:focus-visible { outline: none; }
+
+/* Password scan overlay utility */
+.password-scan {
+  position: relative;
+  overflow: hidden;
+}
+.password-scan:after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; top: 0; bottom: 0;
+  background: linear-gradient(180deg, transparent, rgba(255,255,255,0.35), transparent);
+  animation: scan-wave 1.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.portal-overlay {
+  background: radial-gradient(1200px 600px at 50% -10%, rgba(99,102,241,0.18), rgba(168,85,247,0.05), rgba(0,0,0,0) 60%), linear-gradient(180deg, #0a0a0f, #140a20 60%, #0a0a0f);
+}
+
+.portal-burst {
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: radial-gradient(circle at center, rgba(168,85,247,0.35), rgba(168,85,247,0) 60%);
+  animation: portal-open 1000ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-glass:before, .portal-burst, .password-scan:after { animation: none !important; }
 }
 
 

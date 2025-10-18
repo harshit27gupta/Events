@@ -148,6 +148,19 @@ app.get('/orders', requireAuth, async (req: any, res) => {
   res.json({ orders: items });
 });
 
+// Public ticket lookup by order id (demo-only; returns limited fields)
+app.get('/public/orders/:orderId', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    if (!orderId) return res.status(400).json({ error: 'orderId required' });
+    const doc = await ordersCol.findOne({ _id: orderId }, { projection: { _id: 1, eventId: 1, seatIds: 1, status: 1, createdAt: 1 } });
+    if (!doc) return res.status(404).json({ error: 'order not found' });
+    return res.json({ order: { orderId: doc._id, eventId: String(doc.eventId), seatIds: doc.seatIds, status: doc.status, createdAt: doc.createdAt } });
+  } catch (e) {
+    return res.status(500).json({ error: 'internal error' });
+  }
+});
+
 // Refresh a hold TTL atomically
 app.post('/holds/:holdId/refresh', requireAuth, async (req, res) => {
   const { holdId } = req.params;

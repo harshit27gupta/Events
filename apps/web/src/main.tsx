@@ -9,6 +9,7 @@ import { Toaster, toast } from 'sonner'
 import './index.css'
 const EventsList = React.lazy(() => import('./features/events/EventsList').then(m => ({ default: m.EventsList })))
 const OrdersPage = React.lazy(() => import('./features/orders/OrdersPage').then(m => ({ default: m.OrdersPage })))
+const TicketPage = React.lazy(() => import('./features/orders/TicketPage').then(m => ({ default: m.default })))
 const EventDetail = React.lazy(() => import('./features/events/EventDetail').then(m => ({ default: m.EventDetail })))
 const SeatsPage = React.lazy(() => import('./features/seats/SeatsPage').then(m => ({ default: m.SeatsPage })))
 const CheckoutPage = React.lazy(() => import('./features/checkout/CheckoutPage').then(m => ({ default: m.CheckoutPage })))
@@ -54,6 +55,7 @@ const router = createBrowserRouter([
       { path: 'organizer/events/:id/edit', element: <React.Suspense fallback={<div className='glass p-6 animate-pulse'>Loading…</div>}><OrganizerEventForm /></React.Suspense> },
       { path: 'organizer/events/new', element: <React.Suspense fallback={<div className='glass p-6 animate-pulse'>Loading…</div>}><OrganizerEventForm /></React.Suspense> },
       { path: 'orders', element: <React.Suspense fallback={<div className='glass p-6 animate-pulse'>Loading…</div>}><OrdersPage /></React.Suspense> },
+      { path: 'ticket/:orderId', element: <React.Suspense fallback={<div className='glass p-6 animate-pulse'>Loading…</div>}><TicketPage /></React.Suspense> },
     ]
   }
 ])
