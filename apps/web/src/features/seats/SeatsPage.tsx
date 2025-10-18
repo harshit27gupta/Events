@@ -214,9 +214,23 @@ export function SeatsPage() {
         </button>
         {holdId && (
           <div className="flex items-center gap-3">
-            <span className="text-sm text-neutral-300">Hold expires in {ttl == null ? '—' : `${String(Math.floor((ttl ?? 0) / 60)).padStart(2, '0')}:${String((ttl ?? 0) % 60).padStart(2, '0')}`}</span>
+            <span aria-live="polite" className="text-sm text-neutral-300">Hold expires in {ttl == null ? '—' : `${String(Math.floor((ttl ?? 0) / 60)).padStart(2, '0')}:${String((ttl ?? 0) % 60).padStart(2, '0')}`}</span>
             <button onClick={cancelHold} className="px-3 py-1.5 text-sm rounded-md bg-white/10 hover:bg-white/20">Cancel</button>
-            <button onClick={() => navigate('/checkout', { state: { eventId, holdId, seatIds: selected.length ? selected : undefined } })} className="px-3 py-1.5 text-sm rounded-md bg-brand-600 hover:bg-brand-500">Proceed to pay</button>
+            <button
+              onClick={async () => {
+                let seatsToSend = selected;
+                if (seatsToSend.length === 0 && holdId) {
+                  try {
+                    const r = await api.get(`/api/orders/holds/${holdId}/details`);
+                    seatsToSend = Array.isArray(r.data?.seatIds) ? r.data.seatIds : [];
+                  } catch {}
+                }
+                navigate('/checkout', { state: { eventId, holdId, seatIds: seatsToSend.length ? seatsToSend : undefined } });
+              }}
+              className="px-3 py-1.5 text-sm rounded-md bg-brand-600 hover:bg-brand-500"
+            >
+              Proceed to pay
+            </button>
           </div>
         )}
       </div>

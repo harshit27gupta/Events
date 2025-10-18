@@ -9,9 +9,20 @@ export function AppShell() {
   const [loginOpen, setLoginOpen] = React.useState(false);
   const [signupOpen, setSignupOpen] = React.useState(false);
   const { data: me, refresh } = useAuth();
+  const [offline, setOffline] = React.useState(!navigator.onLine);
+  React.useEffect(() => {
+    const on = () => setOffline(false);
+    const off = () => setOffline(true);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+  }, []);
   return (
     <div className="min-h-dvh bg-neutral-950 text-neutral-100">
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 px-3 py-2 rounded-md bg-brand-600">Skip to content</a>
+      {offline && (
+        <div aria-live="polite" className="bg-amber-600/20 text-amber-300 text-sm py-2 text-center border-b border-amber-400/30">You are offline. Some actions may not work.</div>
+      )}
       <header className="sticky top-0 z-50 backdrop-blur bg-neutral-900/60 border-b border-white/10">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
           <Link to="/" className="font-semibold tracking-tight">events<span className="text-fuchsia-400">.ai</span></Link>

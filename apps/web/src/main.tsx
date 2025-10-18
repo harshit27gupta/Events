@@ -7,13 +7,13 @@ import { AppShell } from './app/AppShell'
 import { HoldProvider } from './features/seats/HoldContext'
 import { Toaster, toast } from 'sonner'
 import './index.css'
-import { EventsList } from './features/events/EventsList'
-import { OrdersPage } from './features/orders/OrdersPage'
-import { EventDetail } from './features/events/EventDetail'
-import { SeatsPage } from './features/seats/SeatsPage'
-import { CheckoutPage } from './features/checkout/CheckoutPage'
-import { OrganizerEventsList } from './features/organizer/OrganizerEventsList'
-import { OrganizerEventForm } from './features/organizer/OrganizerEventForm'
+const EventsList = React.lazy(() => import('./features/events/EventsList').then(m => ({ default: m.EventsList })))
+const OrdersPage = React.lazy(() => import('./features/orders/OrdersPage').then(m => ({ default: m.OrdersPage })))
+const EventDetail = React.lazy(() => import('./features/events/EventDetail').then(m => ({ default: m.EventDetail })))
+const SeatsPage = React.lazy(() => import('./features/seats/SeatsPage').then(m => ({ default: m.SeatsPage })))
+const CheckoutPage = React.lazy(() => import('./features/checkout/CheckoutPage').then(m => ({ default: m.CheckoutPage })))
+const OrganizerEventsList = React.lazy(() => import('./features/organizer/OrganizerEventsList').then(m => ({ default: m.OrganizerEventsList })))
+const OrganizerEventForm = React.lazy(() => import('./features/organizer/OrganizerEventForm').then(m => ({ default: m.OrganizerEventForm })))
 import { RouteError } from './app/RouteError'
 
 const Home = () => (
@@ -46,14 +46,14 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Home /> },
       { path: 'health', element: <Health /> },
-      { path: 'events', element: <EventsList /> },
-      { path: 'events/:id', element: <EventDetail /> },
-      { path: 'events/:id/seats', element: <SeatsPage /> },
-      { path: 'checkout', element: <CheckoutPage /> },
-      { path: 'organizer/events', element: <OrganizerEventsList /> },
-      { path: 'organizer/events/:id/edit', element: <OrganizerEventForm /> },
-      { path: 'organizer/events/new', element: <OrganizerEventForm /> },
-      { path: 'orders', element: <OrdersPage /> },
+      { path: 'events', element: <React.Suspense fallback={<div className='glass p-6 animate-pulse'>Loading…</div>}><EventsList /></React.Suspense> },
+      { path: 'events/:id', element: <React.Suspense fallback={<div className='glass p-6 animate-pulse'>Loading…</div>}><EventDetail /></React.Suspense> },
+      { path: 'events/:id/seats', element: <React.Suspense fallback={<div className='glass p-6 animate-pulse'>Loading…</div>}><SeatsPage /></React.Suspense> },
+      { path: 'checkout', element: <React.Suspense fallback={<div className='glass p-6 animate-pulse'>Loading…</div>}><CheckoutPage /></React.Suspense> },
+      { path: 'organizer/events', element: <React.Suspense fallback={<div className='glass p-6 animate-pulse'>Loading…</div>}><OrganizerEventsList /></React.Suspense> },
+      { path: 'organizer/events/:id/edit', element: <React.Suspense fallback={<div className='glass p-6 animate-pulse'>Loading…</div>}><OrganizerEventForm /></React.Suspense> },
+      { path: 'organizer/events/new', element: <React.Suspense fallback={<div className='glass p-6 animate-pulse'>Loading…</div>}><OrganizerEventForm /></React.Suspense> },
+      { path: 'orders', element: <React.Suspense fallback={<div className='glass p-6 animate-pulse'>Loading…</div>}><OrdersPage /></React.Suspense> },
     ]
   }
 ])
