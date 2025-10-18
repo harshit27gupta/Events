@@ -110,6 +110,30 @@ app.use('/api/events', async (req, res) => {
   }
 });
 
+// Seats and TTL endpoints: allow higher read rate for polling
+const seatsReadLimiter = rateLimit({ windowMs: 60 * 1000, max: 180, standardHeaders: true, legacyHeaders: false });
+app.get('/api/orders/seats/:eventId', seatsReadLimiter, async (req, res) => {
+  const url = `${ORDERS_SERVICE_URL}/seats/${encodeURIComponent(req.params.eventId)}`;
+  try {
+    const r = await axios({ url, method: 'GET' });
+    res.status(r.status).set(r.headers as any).send(r.data);
+  } catch (err: any) {
+    const status = err.response?.status || 500;
+    res.status(status).send(err.response?.data || { error: 'upstream error' });
+  }
+});
+app.get('/api/orders/holds/:holdId/ttl', seatsReadLimiter, async (req, res) => {
+  const url = `${ORDERS_SERVICE_URL}/holds/${encodeURIComponent(req.params.holdId)}/ttl`;
+  try {
+    const r = await axios({ url, method: 'GET' });
+    res.status(r.status).set(r.headers as any).send(r.data);
+  } catch (err: any) {
+    const status = err.response?.status || 500;
+    res.status(status).send(err.response?.data || { error: 'upstream error' });
+  }
+});
+
+// Orders write endpoints: stricter limits and auth
 const ordersLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 200, standardHeaders: true, legacyHeaders: false });
 app.use('/api/orders', ordersLimiter, async (req, res) => {
   const authHeader = req.headers['authorization'] || '';

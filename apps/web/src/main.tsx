@@ -4,12 +4,17 @@ import { createBrowserRouter, RouterProvider, Link } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './lib/query'
 import { AppShell } from './app/AppShell'
+import { HoldProvider } from './features/seats/HoldContext'
 import { Toaster, toast } from 'sonner'
 import './index.css'
 import { EventsList } from './features/events/EventsList'
 import { OrdersPage } from './features/orders/OrdersPage'
 import { EventDetail } from './features/events/EventDetail'
 import { SeatsPage } from './features/seats/SeatsPage'
+import { CheckoutPage } from './features/checkout/CheckoutPage'
+import { OrganizerEventsList } from './features/organizer/OrganizerEventsList'
+import { OrganizerEventForm } from './features/organizer/OrganizerEventForm'
+import { RouteError } from './app/RouteError'
 
 const Home = () => (
   <div style={{ padding: 24 }}>
@@ -32,13 +37,22 @@ const Health = () => {
 const router = createBrowserRouter([
   {
     path: '/',
-    element: <AppShell />,
+    element: (
+      <HoldProvider>
+        <AppShell />
+      </HoldProvider>
+    ),
+    errorElement: <RouteError />,
     children: [
       { index: true, element: <Home /> },
       { path: 'health', element: <Health /> },
       { path: 'events', element: <EventsList /> },
       { path: 'events/:id', element: <EventDetail /> },
       { path: 'events/:id/seats', element: <SeatsPage /> },
+      { path: 'checkout', element: <CheckoutPage /> },
+      { path: 'organizer/events', element: <OrganizerEventsList /> },
+      { path: 'organizer/events/:id/edit', element: <OrganizerEventForm /> },
+      { path: 'organizer/events/new', element: <OrganizerEventForm /> },
       { path: 'orders', element: <OrdersPage /> },
     ]
   }

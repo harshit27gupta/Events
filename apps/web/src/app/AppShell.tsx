@@ -11,12 +11,16 @@ export function AppShell() {
   const { data: me, refresh } = useAuth();
   return (
     <div className="min-h-dvh bg-neutral-950 text-neutral-100">
+      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 px-3 py-2 rounded-md bg-brand-600">Skip to content</a>
       <header className="sticky top-0 z-50 backdrop-blur bg-neutral-900/60 border-b border-white/10">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
           <Link to="/" className="font-semibold tracking-tight">events<span className="text-fuchsia-400">.ai</span></Link>
           <nav className="flex items-center gap-4 text-sm">
             <Link to="/events" className="hover:text-white text-neutral-300">Events</Link>
             <Link to="/orders" className="hover:text-white text-neutral-300">My Orders</Link>
+            {me && (me.role === 'organizer' || me.role === 'admin') && (
+              <Link to="/organizer/events" className="hover:text-white text-neutral-300">Organizer</Link>
+            )}
             {me ? (
               <div className="flex items-center gap-2">
                 <span className="text-neutral-300">{me.email}</span>
@@ -33,7 +37,7 @@ export function AppShell() {
           </nav>
         </div>
       </header>
-      <main className="max-w-6xl mx-auto px-4 py-6">
+      <main id="main" className="max-w-6xl mx-auto px-4 py-6">
         <Outlet />
       </main>
       <footer className="border-t border-white/10 py-8 text-xs text-neutral-400">

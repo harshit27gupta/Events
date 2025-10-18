@@ -135,6 +135,19 @@ app.get('/holds/:holdId/ttl', async (req, res) => {
   res.json({ holdId, ttl: minTtl });
 });
 
+// List current user's orders
+app.get('/orders', requireAuth, async (req: any, res) => {
+  const userId = req.user?.userId;
+  if (!userId) return res.status(401).json({ error: 'unauthorized' });
+  const items = await ordersCol
+    .find({ userId })
+    .project({ _id: 1, eventId: 1, seatIds: 1, paymentIntentId: 1, status: 1, createdAt: 1 })
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .toArray();
+  res.json({ orders: items });
+});
+
 // Refresh a hold TTL atomically
 app.post('/holds/:holdId/refresh', requireAuth, async (req, res) => {
   const { holdId } = req.params;
@@ -176,51 +189,121 @@ app.post('/payments/confirm', requireAuth, async (req, res) => {
 
 const purchaseSchema = z.object({ eventId: z.string().min(1), holdId: z.string().min(1), seatIds: z.array(z.string()).min(1), paymentIntentId: z.string().min(1) });
 app.post('/purchase', requireAuth, async (req, res) => {
-  const parsed = purchaseSchema.safeParse(req.body || {});
-  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
-  const { eventId, holdId, seatIds, paymentIntentId } = parsed.data as any;
-  const idempotencyKey = (req.headers['idempotency-key'] as string) || '';
-  if (!ObjectId.isValid(eventId)) return res.status(400).json({ error: 'invalid eventId' });
-  if (idempotencyKey) {
-    const cached = await redis.get(`idem:${idempotencyKey}`);
-    if (cached) return res.status(201).send(JSON.parse(cached));
-  }
-  // payment check
-  const piRaw = await redis.get(`pi:${paymentIntentId}`);
-  if (!piRaw) return res.status(400).json({ error: 'paymentIntent missing' });
-  const pi = JSON.parse(piRaw);
-  if (pi.status !== 'succeeded') return res.status(402).json({ error: 'payment required' });
-  // verify holds
-  for (const sid of seatIds) {
-    const v = await redis.get(seatKey(eventId, sid));
-    if (v !== holdId) return res.status(409).json({ error: 'hold missing', seatId: sid });
-  }
-  // transactional reserve in DB and create order
-  const client = getMongoClient();
-  const session = client?.startSession();
-  let response: any;
-  await session?.withTransaction(async () => {
-    const doc: SeatDoc | null = await seatsCol.findOne({ eventId: new ObjectId(eventId) }, { session });
-    if (!doc) throw Object.assign(new Error('event seats not found'), { status: 404 });
-    const reservedSet = new Set(doc.seats.filter(s => s.state === 'reserved').map(s => s.seatId));
-    for (const sid of seatIds) {
-      if (reservedSet.has(sid)) throw Object.assign(new Error('seat already reserved'), { status: 409 });
+  try {
+    const parsed = purchaseSchema.safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+    const { eventId, holdId, seatIds, paymentIntentId } = parsed.data as any;
+    const idempotencyKey = (req.headers['idempotency-key'] as string) || '';
+    if (!ObjectId.isValid(eventId)) return res.status(400).json({ error: 'invalid eventId' });
+    if (idempotencyKey) {
+      const cached = await redis.get(`idem:${idempotencyKey}`);
+      if (cached) return res.status(201).send(JSON.parse(cached));
     }
-    const nextSeats = doc.seats.map(s => seatIds.includes(s.seatId) ? { ...s, state: 'reserved' as const } : s);
-    await seatsCol.updateOne({ _id: doc._id }, { $set: { seats: nextSeats } }, { session });
-    const orderId = randomUUID();
-    const orderDoc = { _id: orderId, userId: (req as any).user?.userId, eventId: new ObjectId(eventId), seatIds, paymentIntentId, status: 'reserved', createdAt: new Date() };
-    await ordersCol.insertOne(orderDoc, { session });
-    response = { orderId, eventId, seatIds, status: 'reserved' };
-  });
-  await session?.endSession();
-  // clear holds
+    // payment check
+    const piRaw = await redis.get(`pi:${paymentIntentId}`);
+    if (!piRaw) return res.status(400).json({ error: 'paymentIntent missing' });
+    const pi = JSON.parse(piRaw);
+    if (pi.status !== 'succeeded') return res.status(402).json({ error: 'payment required' });
+    // verify holds
+    for (const sid of seatIds) {
+      const v = await redis.get(seatKey(eventId, sid));
+      if (v !== holdId) return res.status(409).json({ error: 'hold missing', seatId: sid });
+    }
+    // transactional reserve in DB and create order (fallback if transactions unsupported)
+    const client = getMongoClient();
+    const session = client?.startSession();
+    let response: any;
+    try {
+      await session?.withTransaction(async () => {
+        const doc: SeatDoc | null = await seatsCol.findOne({ eventId: new ObjectId(eventId) }, { session });
+        if (!doc) throw Object.assign(new Error('event seats not found'), { status: 404 });
+        const reservedSet = new Set(doc.seats.filter(s => s.state === 'reserved').map(s => s.seatId));
+        for (const sid of seatIds) {
+          if (reservedSet.has(sid)) throw Object.assign(new Error('seat already reserved'), { status: 409 });
+        }
+        const nextSeats = doc.seats.map(s => seatIds.includes(s.seatId) ? { ...s, state: 'reserved' as const } : s);
+        await seatsCol.updateOne({ _id: doc._id }, { $set: { seats: nextSeats } }, { session });
+        const orderId = randomUUID();
+        const orderDoc = { _id: orderId, userId: (req as any).user?.userId, eventId: new ObjectId(eventId), seatIds, paymentIntentId, status: 'reserved', createdAt: new Date() };
+        await ordersCol.insertOne(orderDoc, { session });
+        response = { orderId, eventId, seatIds, status: 'reserved' };
+      });
+    } catch (err: any) {
+      if (String(err?.message || '').includes('Transaction numbers are only allowed')) {
+        const doc: SeatDoc | null = await seatsCol.findOne({ eventId: new ObjectId(eventId) });
+        if (!doc) return res.status(404).json({ error: 'event seats not found' });
+        const reservedSet = new Set(doc.seats.filter((s: any) => s.state === 'reserved').map((s: any) => s.seatId));
+        for (const sid of seatIds) {
+          if (reservedSet.has(sid)) return res.status(409).json({ error: 'seat already reserved' });
+        }
+        const nextSeats = doc.seats.map((s: any) => seatIds.includes(s.seatId) ? { ...s, state: 'reserved' as const } : s);
+        const upd = await seatsCol.updateOne({ _id: doc._id, 'seats.seatId': { $in: seatIds } }, { $set: { seats: nextSeats } });
+        if (!upd.acknowledged) return res.status(500).json({ error: 'failed to reserve seats' });
+        const orderId = randomUUID();
+        const orderDoc = { _id: orderId, userId: (req as any).user?.userId, eventId: new ObjectId(eventId), seatIds, paymentIntentId, status: 'reserved', createdAt: new Date() };
+        await ordersCol.insertOne(orderDoc);
+        response = { orderId, eventId, seatIds, status: 'reserved' };
+      } else {
+        throw err;
+      }
+    } finally {
+      await session?.endSession();
+    }
+    // clear holds
+    const setKey = holdSetKey(holdId);
+    const keys = await redis.smembers(setKey);
+    if (keys.length) await redis.del(...keys);
+    await redis.del(setKey);
+    if (idempotencyKey) await redis.set(`idem:${idempotencyKey}`, JSON.stringify(response), 'EX', 600);
+    return res.status(201).json(response);
+  } catch (e: any) {
+    getLogger().error({ err: e }, 'Purchase failed');
+    const status = e?.status && Number.isInteger(e.status) ? e.status : 500;
+    return res.status(status).json({ error: e?.message || 'internal error' });
+  }
+});
+
+// Get hold details: eventId, seatIds, and ttl
+app.get('/holds/:holdId/details', requireAuth, async (req, res) => {
+  const { holdId } = req.params;
   const setKey = holdSetKey(holdId);
-  const keys = await redis.smembers(setKey);
-  if (keys.length) await redis.del(...keys);
-  await redis.del(setKey);
-  if (idempotencyKey) await redis.set(`idem:${idempotencyKey}`, JSON.stringify(response), 'EX', 600);
-  res.status(201).json(response);
+  let members: string[] = await redis.smembers(setKey);
+  if (members.length === 0) {
+    // Fallback: reconstruct membership by scanning keys whose value == holdId
+    // Dev-friendly and small scale; acceptable for this project.
+    let cursor = '0';
+    const found: string[] = [];
+    do {
+      const [next, keys] = await redis.scan(cursor, 'MATCH', 'hold:*:*', 'COUNT', 200);
+      cursor = next;
+      if (keys && keys.length) {
+        const vals = await redis.mget(...keys);
+        for (let i = 0; i < keys.length; i++) {
+          if (vals[i] === holdId) found.push(keys[i]);
+        }
+      }
+    } while (cursor !== '0');
+    members = found;
+    if (members.length === 0) return res.status(404).json({ error: 'hold not found' });
+  }
+  // members are like hold:<eventId>:<seatId>
+  const seatIds: string[] = [];
+  let eventId: string | null = null;
+  for (const m of members) {
+    const parts = m.split(':');
+    if (parts.length >= 3) {
+      eventId = parts[1];
+      seatIds.push(parts.slice(2).join(':'));
+    }
+  }
+  // compute min TTL like TTL endpoint
+  let minTtl = Number.MAX_SAFE_INTEGER;
+  for (const key of members) {
+    const ttl = await redis.ttl(key);
+    if (ttl >= 0 && ttl < minTtl) minTtl = ttl;
+  }
+  if (minTtl === Number.MAX_SAFE_INTEGER) minTtl = 0;
+  return res.json({ holdId, eventId, seatIds, ttl: minTtl });
 });
 
 async function start() {

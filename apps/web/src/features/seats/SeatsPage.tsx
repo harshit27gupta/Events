@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { toast } from 'sonner';
@@ -16,6 +16,7 @@ const stateColors: Record<Seat['state'], string> = {
 
 export function SeatsPage() {
   const { id: eventId } = useParams();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const [selected, setSelected] = React.useState<string[]>([]);
   const [holdId, setHoldId] = React.useState<string | null>(null);
@@ -215,6 +216,7 @@ export function SeatsPage() {
           <div className="flex items-center gap-3">
             <span className="text-sm text-neutral-300">Hold expires in {ttl == null ? '—' : `${String(Math.floor((ttl ?? 0) / 60)).padStart(2, '0')}:${String((ttl ?? 0) % 60).padStart(2, '0')}`}</span>
             <button onClick={cancelHold} className="px-3 py-1.5 text-sm rounded-md bg-white/10 hover:bg-white/20">Cancel</button>
+            <button onClick={() => navigate('/checkout', { state: { eventId, holdId, seatIds: selected.length ? selected : undefined } })} className="px-3 py-1.5 text-sm rounded-md bg-brand-600 hover:bg-brand-500">Proceed to pay</button>
           </div>
         )}
       </div>

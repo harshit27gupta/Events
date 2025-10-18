@@ -17,6 +17,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'devsecret';
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const ACCESS_TOKEN_TTL_SECONDS = parseInt(process.env.ACCESS_TOKEN_TTL_SECONDS || '900', 10); // 15m
 const REFRESH_TOKEN_TTL_SECONDS = parseInt(process.env.REFRESH_TOKEN_TTL_SECONDS || '1209600', 10); // 14d
+const SESSION_TTL_SECONDS = parseInt(process.env.SESSION_TTL_SECONDS || '2592000', 10); // 30d
 const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || '';
 const COOKIE_SECURE = (process.env.COOKIE_SECURE || 'false').toLowerCase() === 'true';
 
@@ -32,12 +33,16 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'auth' });
 });
 
-function authMiddleware(req: any, res: any, next: any) {
+async function authMiddleware(req: any, res: any, next: any) {
   const header = (req.headers['authorization'] as string) || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : (parseCookies(req.headers['cookie'] as string | undefined)['access_token'] || null);
   if (!token) return res.status(401).json({ error: 'missing token' });
   try {
     const decoded = verifyToken(token, JWT_SECRET) as any;
+    if (!decoded?.sid) return res.status(401).json({ error: 'invalid token' });
+    const sidKey = `session:${decoded.sid}`;
+    const sess = await redis.get(sidKey);
+    if (!sess) return res.status(401).json({ error: 'session expired' });
     req.user = decoded;
     next();
   } catch {
@@ -62,18 +67,34 @@ function setAuthCookies(res: express.Response, accessToken: string, refreshToken
     domain: COOKIE_DOMAIN || undefined,
     httpOnly: true,
     sameSite: 'lax',
-    maxAgeMs: REFRESH_TOKEN_TTL_SECONDS * 1000,
-    // Restrict refresh cookie to gateway path
+    maxAgeMs: Math.min(REFRESH_TOKEN_TTL_SECONDS, SESSION_TTL_SECONDS) * 1000,
     path: '/api/auth/refresh',
   });
 }
 
-async function issueTokens(user: User) {
-  const payload = { userId: (user._id as any).toString(), email: user.email, role: user.role };
+function setSessionCookie(res: express.Response, sid: string) {
+  setCookie(res, 'session_id', sid, {
+    secure: COOKIE_SECURE,
+    domain: COOKIE_DOMAIN || undefined,
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAgeMs: SESSION_TTL_SECONDS * 1000,
+    path: '/',
+  });
+}
+
+async function createSession(userId: string) {
+  const sid = randomUUID();
+  await redis.set(`session:${sid}`, JSON.stringify({ userId }), 'EX', SESSION_TTL_SECONDS);
+  return sid;
+}
+
+async function issueTokens(user: User, sid: string) {
+  const payload = { userId: (user._id as any).toString(), email: user.email, role: user.role, sid };
   const accessToken = signAccessToken(payload, JWT_SECRET, ACCESS_TOKEN_TTL_SECONDS);
   const jti = randomUUID();
   const refreshToken = jwt.sign({ ...payload, jti }, JWT_SECRET, { expiresIn: REFRESH_TOKEN_TTL_SECONDS });
-  await redis.set(`refresh:${jti}`, JSON.stringify({ userId: payload.userId }), 'EX', REFRESH_TOKEN_TTL_SECONDS);
+  await redis.set(`refresh:${jti}`, JSON.stringify({ userId: payload.userId, sid }), 'EX', Math.min(REFRESH_TOKEN_TTL_SECONDS, SESSION_TTL_SECONDS));
   return { accessToken, refreshToken };
 }
 
@@ -93,8 +114,10 @@ app.post('/signup', authLimiter, async (req, res) => {
   const user: User = { email, passwordHash, name, role: 'user' };
   const result = await usersCol.insertOne(user);
   const fullUser = { ...user, _id: result.insertedId } as User;
-  const { accessToken, refreshToken } = await issueTokens(fullUser);
+  const sid = await createSession(result.insertedId.toString());
+  const { accessToken, refreshToken } = await issueTokens(fullUser, sid);
   setAuthCookies(res, accessToken, refreshToken);
+  setSessionCookie(res, sid);
   res.status(201).json({ userId: result.insertedId.toString(), email, role: user.role });
 });
 
@@ -108,8 +131,10 @@ app.post('/login', loginLimiter, async (req, res) => {
   if (!user) return res.status(401).json({ error: 'invalid credentials' });
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return res.status(401).json({ error: 'invalid credentials' });
-  const { accessToken, refreshToken } = await issueTokens(user);
+  const sid = await createSession((user._id as any).toString());
+  const { accessToken, refreshToken } = await issueTokens(user, sid);
   setAuthCookies(res, accessToken, refreshToken);
+  setSessionCookie(res, sid);
   res.json({ userId: user._id.toString(), email, role: user.role });
 });
 
@@ -118,15 +143,19 @@ app.post('/refresh', async (req, res) => {
   const token = cookies['refresh_token'];
   if (!token) return res.status(401).json({ error: 'missing refresh token' });
   try {
-    const decoded = verifyToken<{ userId: string; jti?: string }>(token, JWT_SECRET);
+    const decoded = verifyToken<{ userId: string; jti?: string; sid?: string }>(token, JWT_SECRET);
     if (!decoded.jti) return res.status(401).json({ error: 'invalid refresh token' });
     const key = `refresh:${decoded.jti}`;
     const exists = await redis.get(key);
     if (!exists) return res.status(401).json({ error: 'refresh revoked' });
+    if (!decoded.sid) return res.status(401).json({ error: 'invalid refresh token' });
+    const sess = await redis.get(`session:${decoded.sid}`);
+    if (!sess) return res.status(401).json({ error: 'session expired' });
     await redis.del(key);
     const user = await usersCol.findOne({ _id: new ObjectId(decoded.userId) });
     if (!user) return res.status(401).json({ error: 'user not found' });
-    const { accessToken, refreshToken } = await issueTokens(user);
+    await redis.expire(`session:${decoded.sid}`, SESSION_TTL_SECONDS);
+    const { accessToken, refreshToken } = await issueTokens(user, decoded.sid);
     setAuthCookies(res, accessToken, refreshToken);
     res.json({ ok: true });
   } catch {
@@ -137,6 +166,7 @@ app.post('/refresh', async (req, res) => {
 app.post('/logout', async (req, res) => {
   const cookies = parseCookies(req.headers['cookie'] as string | undefined);
   const token = cookies['refresh_token'];
+  const sid = cookies['session_id'];
   if (token) {
     try {
       const decoded = verifyToken<{ jti?: string }>(token, JWT_SECRET);
@@ -145,8 +175,12 @@ app.post('/logout', async (req, res) => {
       // ignore
     }
   }
+  if (sid) {
+    try { await redis.del(`session:${sid}`); } catch {}
+  }
   clearCookie(res, 'access_token', { path: '/' });
   clearCookie(res, 'refresh_token', { path: '/api/auth/refresh' });
+  clearCookie(res, 'session_id', { path: '/' });
   res.status(204).send();
 });
 
