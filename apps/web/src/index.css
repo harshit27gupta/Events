@@ -10,8 +10,21 @@ body {
   @apply bg-neutral-950 text-neutral-100 bg-bg-noise;
 }
 
+/* Refined glass utilities */
 .glass {
-  @apply backdrop-blur-xs bg-neutral-900/50 border border-white/10 shadow-glass rounded-xl;
+  @apply backdrop-blur-md bg-neutral-900/40 border border-white/10 rounded-xl;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.glass-elevated {
+  @apply backdrop-blur-xl bg-neutral-900/95 border border-white/10 rounded-xl;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 8px 32px rgba(0,0,0,0.4);
+}
+
+/* Fluid container with XL/2XL padding */
+.container-fluid {
+  @apply w-full mx-auto px-4 sm:px-6 lg:px-8 xl:px-12;
+  max-width: min(1400px, calc(100vw - 3rem));
 }
 
 

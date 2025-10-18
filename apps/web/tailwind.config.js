@@ -18,6 +18,23 @@ export default {
           700: '#7e22ce',
           800: '#6b21a8',
           900: '#581c87'
+        },
+        // Semantic colors & extended neutrals
+        success: {
+          DEFAULT: '#10b981',
+          light: '#34d399',
+          dark: '#059669'
+        },
+        warning: {
+          DEFAULT: '#f59e0b',
+          light: '#fbbf24'
+        },
+        danger: {
+          DEFAULT: '#ef4444',
+          light: '#f87171'
+        },
+        neutral: {
+          925: '#141414' // custom elevated background
         }
       },
       boxShadow: {
@@ -29,13 +46,16 @@ export default {
       borderRadius: {
         xl: '1rem'
       },
+      fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif']
+      },
       backgroundImage: {
         'bg-noise': "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"40\" height=\"40\" viewBox=\"0 0 40 40\"><filter id=\"n\"><feTurbulence type=\"fractalNoise\" baseFrequency=\"0.8\" numOctaves=\"4\" stitchTiles=\"stitch\"/></filter><rect width=\"100%\" height=\"100%\" filter=\"url(%23n)\" opacity=\"0.03\"/></svg>')",
         'brand-grad': 'linear-gradient(135deg, #a855f7 0%, #ec4899 100%)'
       }
     }
   },
-  plugins: []
+  plugins: [require('@tailwindcss/forms'), require('@tailwindcss/typography')]
 }
 
 

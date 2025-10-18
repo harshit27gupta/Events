@@ -4,6 +4,8 @@ import { api } from '../../lib/api';
 import { EventCard } from './EventCard';
 import { useActiveHold } from '../seats/useActiveHold';
 import { Link } from 'react-router-dom';
+import { Input } from '../../components/Input';
+import { motion } from 'framer-motion';
 
 export function EventsList() {
   const { data, isLoading, error } = useQuery({
@@ -15,8 +17,8 @@ export function EventsList() {
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {Array.from({ length: 6 }).map((_, i) => (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="glass h-40 animate-pulse" />
         ))}
       </div>
@@ -42,14 +44,28 @@ export function EventsList() {
           <Link to={`/events/${active.eventId}/seats`} className="px-3 py-1.5 rounded-md bg-brand-600 hover:bg-brand-500 text-sm">Continue booking</Link>
         </div>
       )}
-      <div className="mb-4">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search events…" className="w-full sm:w-80 bg-neutral-800/60 border border-white/10 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-brand-500" />
+      <div className="mb-6">
+        <div className="w-full sm:w-96">
+          <Input value={q} onChange={(e) => setQ(e.currentTarget.value)} placeholder="Search events…" aria-label="Search events" />
+        </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map((e: any) => (
-          <EventCard key={e._id} e={e} />
+      <motion.div
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+        variants={{ show: { transition: { staggerChildren: 0.05 } } }}
+        initial={typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? undefined : 'hidden'}
+        animate={typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? undefined : 'show'}
+      >
+        {filtered.slice(0, 12).map((e: any) => (
+          <motion.div key={e._id} variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}>
+            <EventCard e={e} />
+          </motion.div>
         ))}
-      </div>
+        {filtered.slice(12).map((e: any) => (
+          <div key={e._id}>
+            <EventCard e={e} />
+          </div>
+        ))}
+      </motion.div>
     </>
   );
 }

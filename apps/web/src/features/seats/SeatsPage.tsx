@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { toast } from 'sonner';
 import { getStoredHold } from './useActiveHold';
+import { motion } from 'framer-motion';
 
 type Seat = { seatId: string; row: number; number: number; state: 'available' | 'held' | 'reserved' };
 type SeatsResponse = { eventId: string; seats: Seat[] };
@@ -185,13 +186,25 @@ export function SeatsPage() {
                   const interactive = s.state === 'available';
                   const base = interactive ? stateColors.available : stateColors[s.state];
                   const cls = isSelected ? 'ring-2 ring-white/80' : '';
-                  return (
-                    <button
+                  return interactive ? (
+                    <motion.button
                       key={s.seatId}
                       onClick={() => toggleSeat(s)}
+                      whileHover={{ scale: 1.08 }}
+                      whileTap={{ scale: 0.92 }}
                       disabled={!interactive}
                       aria-label={`Row ${rowLabel(r)} Seat ${c} ${s.state}`}
-                      className={`w-8 h-8 rounded-sm text-[10px] flex items-center justify-center select-none ${base} ${cls} disabled:opacity-40`}
+                      className={`w-8 h-8 md:w-10 md:h-10 rounded-sm text-[10px] flex items-center justify-center select-none ${base} ${cls}`}
+                      title={`${rowLabel(r)}-${c} • ${s.state}`}
+                    >
+                      {c}
+                    </motion.button>
+                  ) : (
+                    <button
+                      key={s.seatId}
+                      disabled
+                      aria-label={`Row ${rowLabel(r)} Seat ${c} ${s.state}`}
+                      className={`w-8 h-8 md:w-10 md:h-10 rounded-sm text-[10px] flex items-center justify-center select-none ${base} ${cls} disabled:opacity-40`}
                       title={`${rowLabel(r)}-${c} • ${s.state}`}
                     >
                       {c}

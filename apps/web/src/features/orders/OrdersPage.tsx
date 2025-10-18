@@ -2,7 +2,7 @@ import React from 'react';
 import { useAuth } from '../auth/useAuth';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 export function OrdersPage() {
   const { data: me, isLoading } = useAuth();
@@ -20,6 +20,14 @@ export function OrdersPage() {
       enabled: !!eventId
     });
     return <>{evt?.title || eventId}</>;
+  };
+  const formatSeatId = (id: string) => {
+    const m = /^R(\d+)-S(\d+)$/.exec(id);
+    if (!m) return id;
+    const r = parseInt(m[1], 10);
+    const c = parseInt(m[2], 10);
+    const rowLabel = String.fromCharCode('A'.charCodeAt(0) + (r - 1));
+    return `${rowLabel}${c}`;
   };
   if (isLoading) {
     return <div className="glass p-6 animate-pulse">Loading…</div>;
@@ -40,7 +48,7 @@ export function OrdersPage() {
           <div className="text-lg font-semibold mb-1">Booking complete</div>
           <div className="text-neutral-300 text-sm">Order ID: {justCreated.orderId}</div>
           <div className="text-neutral-300 text-sm">Event: <EventTitle eventId={justCreated.eventId} /></div>
-          <div className="text-neutral-300 text-sm">Seats: {justCreated.seatIds?.join(', ')}</div>
+          <div className="text-neutral-300 text-sm">Seats: {justCreated.seatIds?.map(formatSeatId).join(', ')}</div>
           <div className="text-neutral-300 text-sm">Status: {justCreated.status}</div>
         </div>
       )}
@@ -53,8 +61,8 @@ export function OrdersPage() {
             {data.orders.map((o: any) => (
               <div key={o._id} className="flex items-center justify-between bg-white/5 rounded-md px-3 py-2">
                 <div className="text-sm">
-                  <div className="text-neutral-200">Order {o._id} • <span className="text-neutral-300"><EventTitle eventId={o.eventId} /></span></div>
-                  <div className="text-neutral-400">Seats: {o.seatIds?.join(', ')} • {new Date(o.createdAt).toLocaleString()}</div>
+                  <div className="text-neutral-200">Order {o._id} • <Link to={`/events/${o.eventId}`} className="text-neutral-300 hover:text-white"><EventTitle eventId={o.eventId} /></Link></div>
+                  <div className="text-neutral-400">{o.seatIds?.length} seat(s) • {o.seatIds?.map(formatSeatId).join(', ')} • {new Date(o.createdAt).toLocaleString()}</div>
                 </div>
                 <div className="text-xs px-2 py-1 rounded bg-white/10">{o.status}</div>
               </div>

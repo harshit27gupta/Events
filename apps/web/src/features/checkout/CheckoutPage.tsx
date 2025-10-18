@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { toast } from 'sonner';
 import { useHold } from '../seats/HoldContext';
+import { Button } from '../../components/Button';
 
 type CheckoutState = {
   eventId: string;
@@ -23,10 +24,20 @@ export function CheckoutPage() {
   const [busy, setBusy] = React.useState(false);
   const [intentId, setIntentId] = React.useState<string | null>(null);
   const [clientSecret, setClientSecret] = React.useState<string | null>(null);
+  const [paid, setPaid] = React.useState(false);
+  const [eventTitle, setEventTitle] = React.useState<string>('');
 
   const eventId = state.eventId || hold.eventId || '';
   const holdId = state.holdId || hold.holdId || '';
   const [seatIds, setSeatIds] = React.useState<string[]>(Array.isArray(state.seatIds) ? state.seatIds : []);
+  const formatSeatId = React.useCallback((id: string) => {
+    const m = /^R(\d+)-S(\d+)$/.exec(id);
+    if (!m) return id;
+    const rowNum = parseInt(m[1], 10);
+    const seatNum = parseInt(m[2], 10);
+    const rowLabel = String.fromCharCode('A'.charCodeAt(0) + (rowNum - 1));
+    return `${rowLabel}${seatNum}`;
+  }, []);
   // Fallback: fetch hold details if seatIds missing but we have a holdId
   React.useEffect(() => {
     (async () => {
@@ -38,6 +49,13 @@ export function CheckoutPage() {
       }
     })();
   }, [holdId, seatIds.length]);
+  React.useEffect(() => {
+    (async () => {
+      if (eventId) {
+        try { const r = await api.get(`/api/events/${eventId}`); setEventTitle(r.data?.title || ''); } catch {}
+      }
+    })();
+  }, [eventId]);
   const amount = state.amount ?? seatIds.length * 500;
 
   const createIntent = async () => {
@@ -60,6 +78,7 @@ export function CheckoutPage() {
     try {
       await api.post('/api/orders/payments/confirm', { paymentIntentId: intentId, clientSecret });
       toast.success('Payment confirmed');
+      setPaid(true);
     } catch (e: any) {
       toast.error(e?.response?.data?.error || 'Failed to confirm payment');
     } finally {
@@ -97,23 +116,53 @@ export function CheckoutPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="glass p-4">
-        <div className="text-lg font-semibold mb-2">Order summary</div>
-        <div className="text-sm text-neutral-300">Event: {eventId}</div>
-        <div className="text-sm text-neutral-300">Seats: {seatIds.join(', ')}</div>
-        <div className="text-sm text-neutral-300">Amount: ₹{amount}</div>
-      </div>
-      <div className="glass p-4 space-y-3">
-        {!intentId ? (
-          <button disabled={busy} onClick={createIntent} className="px-4 py-2 rounded-md bg-brand-600 hover:bg-brand-500 disabled:opacity-50">Create payment</button>
-        ) : (
-          <div className="space-x-2">
-            <button disabled={busy} onClick={confirmPayment} className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 disabled:opacity-50">Confirm payment</button>
-            <button disabled={busy} onClick={completePurchase} className="px-4 py-2 rounded-md bg-brand-600 hover:bg-brand-500 disabled:opacity-50">Complete booking</button>
+    <div className="grid gap-6 md:grid-cols-3">
+      <div className="md:col-span-2 space-y-4">
+        <div className="glass p-6">
+          <div className="mb-4">
+            <div className="text-lg font-semibold">Checkout</div>
+            <div className="text-xs text-neutral-400">Secure simulated payment</div>
           </div>
-        )}
+          <ol className="grid grid-cols-3 text-center text-xs text-neutral-300">
+            <li className={`py-2 rounded ${!intentId ? 'bg-white/10 text-white' : 'bg-white/5'}`}>1. Create intent</li>
+            <li className={`py-2 rounded ${intentId && !paid ? 'bg-white/10 text-white' : 'bg-white/5'}`}>2. Confirm payment</li>
+            <li className={`py-2 rounded ${paid ? 'bg-white/10 text-white' : 'bg-white/5'}`}>3. Complete booking</li>
+          </ol>
+        </div>
+        <div className="glass p-6 space-y-3">
+          {!intentId ? (
+            <Button disabled={busy} onClick={createIntent}>Create payment</Button>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button disabled={busy || paid} variant="secondary" onClick={confirmPayment}>{paid ? 'Payment confirmed' : 'Confirm payment'}</Button>
+              <Button disabled={busy || !paid} onClick={completePurchase}>Complete booking</Button>
+            </div>
+          )}
+        </div>
       </div>
+      <aside className="space-y-3">
+        <div className="glass p-6">
+          <div className="text-sm text-neutral-400">Event</div>
+          <div className="text-base font-medium">{eventTitle || eventId}</div>
+          <div className="mt-3 text-sm text-neutral-400">Seats</div>
+          <div className="mt-1 flex flex-wrap gap-2">
+            {seatIds.map((s) => <span key={s} className="text-xs px-2 py-1 rounded-md bg-white/10 border border-white/10">{formatSeatId(s)}</span>)}
+          </div>
+          <div className="mt-4 flex items-center justify-between text-sm">
+            <span className="text-neutral-300">Subtotal</span>
+            <span className="text-neutral-100">₹{amount}</span>
+          </div>
+          <div className="mt-1 flex items-center justify-between text-sm">
+            <span className="text-neutral-300">Fees</span>
+            <span className="text-neutral-100">₹0</span>
+          </div>
+          <div className="mt-3 border-t border-white/10 pt-3 flex items-center justify-between">
+            <span className="text-neutral-300">Total</span>
+            <span className="text-neutral-100 font-semibold">₹{amount}</span>
+          </div>
+        </div>
+        <div className="text-xs text-neutral-400">Simulated payment only. No real charges.</div>
+      </aside>
     </div>
   );
 }
