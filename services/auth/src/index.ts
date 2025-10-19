@@ -1,15 +1,16 @@
 import express from 'express';
-import { getLogger, getMongoDb, getRedis, requestIdMiddleware, signAccessToken, verifyToken, setCookie, clearCookie, parseCookies } from '@events/common';
+import { getLogger, getMongoDb, getRedis, requestIdMiddleware, signAccessToken, verifyToken, setCookie, clearCookie, parseCookies, errorHandler, asyncHandler, AppError } from '@events/common';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { ObjectId } from 'mongodb';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
+import { Request, Response } from 'express';
 
 type User = { _id?: any; email: string; passwordHash: string; name?: string; role?: 'user' | 'organizer' | 'admin' };
 
-const app = express();
+export const app = express();
 const logger = getLogger();
 const PORT = parseInt(process.env.PORT || '4001', 10);
 const MONGO_URL = process.env.MONGO_URL || 'mongodb://localhost:27017/auth';
@@ -23,6 +24,15 @@ const COOKIE_SECURE = (process.env.COOKIE_SECURE || 'false').toLowerCase() === '
 
 app.use(express.json());
 app.use(requestIdMiddleware);
+app.use(errorHandler);
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error({ promise, reason }, 'Unhandled Rejection');
+});
+process.on('uncaughtException', (error) => {
+  logger.error({ error }, 'Uncaught Exception');
+  process.exit(1);
+});
 
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
 const loginLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
@@ -104,22 +114,27 @@ const signupSchema = z.object({
   name: z.string().min(1).optional(),
 });
 
-app.post('/signup', authLimiter, async (req, res) => {
+app.post('/signup', authLimiter, asyncHandler(async (req: Request, res: Response) => {
   const parsed = signupSchema.safeParse(req.body || {});
   if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
   const { email, password, name } = parsed.data;
-  const existing = await usersCol.findOne({ email });
-  if (existing) return res.status(409).json({ error: 'user exists' });
-  const passwordHash = await bcrypt.hash(password, 10);
-  const user: User = { email, passwordHash, name, role: 'user' };
-  const result = await usersCol.insertOne(user);
-  const fullUser = { ...user, _id: result.insertedId } as User;
-  const sid = await createSession(result.insertedId.toString());
-  const { accessToken, refreshToken } = await issueTokens(fullUser, sid);
-  setAuthCookies(res, accessToken, refreshToken);
-  setSessionCookie(res, sid);
-  res.status(201).json({ userId: result.insertedId.toString(), email, role: user.role });
-});
+  try {
+    const existing = await usersCol.findOne({ email });
+    if (existing) throw new AppError(409, 'USER_EXISTS', 'User already exists');
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user: User = { email, passwordHash, name, role: 'user' };
+    const result = await usersCol.insertOne(user);
+    const fullUser = { ...user, _id: result.insertedId } as User;
+    const sid = await createSession(result.insertedId.toString());
+    const { accessToken, refreshToken } = await issueTokens(fullUser, sid);
+    setAuthCookies(res, accessToken, refreshToken);
+    setSessionCookie(res, sid);
+    res.status(201).json({ userId: result.insertedId.toString(), email, role: user.role });
+  } catch (err: any) {
+    if (err.code === 11000) return res.status(409).json({ error: 'User already exists', code: 'USER_EXISTS' });
+    throw err;
+  }
+}));
 
 const loginSchema = z.object({ email: z.string().email(), password: z.string().min(8) });
 
@@ -138,45 +153,47 @@ app.post('/login', loginLimiter, async (req, res) => {
   res.json({ userId: user._id.toString(), email, role: user.role });
 });
 
-app.post('/refresh', async (req, res) => {
+app.post('/refresh', asyncHandler(async (req: Request, res: Response) => {
   const cookies = parseCookies(req.headers['cookie'] as string | undefined);
   const token = cookies['refresh_token'];
-  if (!token) return res.status(401).json({ error: 'missing refresh token' });
+  if (!token) throw new AppError(401, 'MISSING_REFRESH_TOKEN', 'Missing refresh token');
+  let decoded: { userId: string; jti?: string; sid?: string };
   try {
-    const decoded = verifyToken<{ userId: string; jti?: string; sid?: string }>(token, JWT_SECRET);
-    if (!decoded.jti) return res.status(401).json({ error: 'invalid refresh token' });
-    const key = `refresh:${decoded.jti}`;
-    const exists = await redis.get(key);
-    if (!exists) return res.status(401).json({ error: 'refresh revoked' });
-    if (!decoded.sid) return res.status(401).json({ error: 'invalid refresh token' });
-    const sess = await redis.get(`session:${decoded.sid}`);
-    if (!sess) return res.status(401).json({ error: 'session expired' });
-    await redis.del(key);
-    const user = await usersCol.findOne({ _id: new ObjectId(decoded.userId) });
-    if (!user) return res.status(401).json({ error: 'user not found' });
-    await redis.expire(`session:${decoded.sid}`, SESSION_TTL_SECONDS);
-    const { accessToken, refreshToken } = await issueTokens(user, decoded.sid);
-    setAuthCookies(res, accessToken, refreshToken);
-    res.json({ ok: true });
+    decoded = verifyToken<{ userId: string; jti?: string; sid?: string }>(token, JWT_SECRET);
   } catch {
-    return res.status(401).json({ error: 'invalid refresh token' });
+    throw new AppError(401, 'INVALID_REFRESH_TOKEN', 'Invalid refresh token');
   }
-});
+  if (!decoded.sid) throw new AppError(401, 'INVALID_REFRESH_TOKEN', 'Invalid refresh token');
+  const key = `refresh:${decoded.jti}`;
+  const exists = await redis.get(key);
+  if (!exists) throw new AppError(401, 'REFRESH_REVOKED', 'Refresh token revoked');
+  const sess = await redis.get(`session:${decoded.sid}`);
+  if (!sess) throw new AppError(401, 'SESSION_EXPIRED', 'Session expired');
+  await redis.del(key);
+  const user = await usersCol.findOne({ _id: new ObjectId(decoded.userId) });
+  if (!user) throw new AppError(401, 'USER_NOT_FOUND', 'User not found');
+  await redis.expire(`session:${decoded.sid}`, SESSION_TTL_SECONDS);
+  const { accessToken, refreshToken } = await issueTokens(user, decoded.sid);
+  setAuthCookies(res, accessToken, refreshToken);
+  res.json({ ok: true });
+}));
 
-app.post('/logout', async (req, res) => {
-  const cookies = parseCookies(req.headers['cookie'] as string | undefined);
+app.post('/logout', async (_req, res) => {
+  const cookies = parseCookies(_req.headers['cookie'] as string | undefined);
   const token = cookies['refresh_token'];
   const sid = cookies['session_id'];
   if (token) {
     try {
       const decoded = verifyToken<{ jti?: string }>(token, JWT_SECRET);
       if (decoded.jti) await redis.del(`refresh:${decoded.jti}`);
-    } catch {
-      // ignore
+    } catch (err) {
+      logger.warn({ err }, 'Failed to revoke refresh token');
     }
   }
   if (sid) {
-    try { await redis.del(`session:${sid}`); } catch {}
+    try { await redis.del(`session:${sid}`); } catch (err) {
+      logger.warn({ err }, 'Failed to revoke session token');
+    }
   }
   clearCookie(res, 'access_token', { path: '/' });
   clearCookie(res, 'refresh_token', { path: '/api/auth/refresh' });
@@ -191,17 +208,24 @@ app.get('/me', authMiddleware, async (req: any, res) => {
   res.json({ email: user.email, name: user.name, role: user.role, userId });
 });
 
-async function start() {
+export async function startServer() {
   const db = await getMongoDb(MONGO_URL);
   usersCol = db.collection('users');
   await usersCol.createIndex({ email: 1 }, { unique: true });
   redis = getRedis(REDIS_URL);
-  app.listen(PORT, () => logger.info({ PORT }, 'Auth listening'));
+  return new Promise<void>((resolve) => {
+    app.listen(PORT, () => {
+      logger.info({ PORT }, 'Auth listening');
+      resolve();
+    });
+  });
 }
 
-start().catch((err) => {
-  logger.error({ err }, 'Auth failed to start');
-  process.exit(1);
-});
+if (process.env.JEST_WORKER_ID === undefined) {
+  startServer().catch((err) => {
+    logger.error({ err }, 'Auth failed to start');
+    process.exit(1);
+  });
+}
 
 

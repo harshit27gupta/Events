@@ -1,16 +1,73 @@
+# Dependencies
 node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
 dist/
+build/
+*.tsbuildinfo
+.turbo/
+
+# Environment files
 .env
 .env.*
+!.env.example
+
+# OS files
 .DS_Store
-*.log
+Thumbs.db
+desktop.ini
+
+# IDE / Editor
 .idea/
 .vscode/
 .cursor/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Testing
 coverage/
 .pytest_cache/
 __pycache__/
 *.pyc
 *.pyo
 .mypy_cache/
+.jest/
+*.test.js.snap
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+.parcel-cache/
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Error handling audit (sensitive)
+ERROR_HANDLING_AUDIT.md
+
+# Misc
+*.pid
+*.seed
+*.pid.lock
+.npmrc
+.yarnrc
 

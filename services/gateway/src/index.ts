@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import axios from 'axios';
 import CircuitBreaker from 'opossum';
-import { getLogger, cookieBridgeMiddleware } from '@events/common';
+import { getLogger, cookieBridgeMiddleware, requestIdMiddleware, errorHandler, AppError } from '@events/common';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
 
@@ -15,11 +15,22 @@ app.use(cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true);
     if (allowedOrigins.includes(origin)) return cb(null, true);
-    return cb(new Error('Not allowed by CORS'));
+    return cb(new AppError(403, 'CORS_FORBIDDEN', 'Not allowed by CORS'));
   },
   credentials: true
 }));
 const logger = getLogger();
+
+app.use(requestIdMiddleware);
+app.use(errorHandler);
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error({ promise, reason }, 'Unhandled Rejection');
+});
+process.on('uncaughtException', (error) => {
+  logger.error({ error }, 'Uncaught Exception');
+  process.exit(1);
+});
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
@@ -31,6 +42,11 @@ const axiosBreaker = new CircuitBreaker((url: string) => axios.get(url), {
   timeout: 3000,
   errorThresholdPercentage: 50,
   resetTimeout: 5000
+});
+
+const axiosInstance = axios.create({
+  validateStatus: null, // don't throw on non-2xx
+  timeout: 5000, // 5 seconds
 });
 
 // Global middlewares
@@ -77,11 +93,12 @@ app.get('/orders/health', async (_req, res) => {
 app.use('/api/auth', async (req, res) => {
   const url = `${AUTH_SERVICE_URL}${req.url}`;
   try {
-    const r = await axios({ url, method: req.method as any, data: req.body, headers: { authorization: req.headers['authorization'] || '' } });
+    const r = await axiosInstance({ url, method: req.method as any, data: req.body, headers: { authorization: req.headers['authorization'] || '' } });
     res.status(r.status).set(r.headers as any).send(r.data);
   } catch (err: any) {
+    logger.error({ err, requestId: req.requestId }, 'Upstream auth error');
     const status = err.response?.status || 500;
-    res.status(status).send(err.response?.data || { error: 'upstream error' });
+    res.status(status).json({ error: 'Upstream auth error', code: 'UPSTREAM_AUTH_ERROR', details: err.response?.data, requestId: req.requestId });
   }
 });
 

@@ -1,7 +1,8 @@
 import express from 'express';
-import { getLogger, getMongoDb, parseCookies, verifyToken } from '@events/common';
+import { getLogger, getMongoDb, parseCookies, verifyToken, requestIdMiddleware, errorHandler, asyncHandler } from '@events/common';
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
+import { AppError } from '@events/common';
 
 type Event = { _id?: any; title: string; description?: string; date: string; location?: string; organizerId?: string; tags?: string[] };
 
@@ -11,6 +12,16 @@ const PORT = parseInt(process.env.PORT || '4002', 10);
 const MONGO_URL = process.env.MONGO_URL || 'mongodb://localhost:27017/events';
 
 app.use(express.json());
+app.use(requestIdMiddleware);
+app.use(errorHandler);
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error({ promise, reason }, 'Unhandled Rejection');
+});
+process.on('uncaughtException', (error) => {
+  logger.error({ error }, 'Uncaught Exception');
+  process.exit(1);
+});
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'events' });
@@ -18,7 +29,7 @@ app.get('/health', (_req, res) => {
 
 let eventsCol: any;
 
-app.get('/events', async (_req, res) => {
+app.get('/events', asyncHandler(async (_req, res) => {
   const items = await eventsCol.find({}).sort({ date: 1 }).limit(100).toArray();
   const normalized = items.map((d: any) => ({
     _id: d._id,
@@ -29,7 +40,7 @@ app.get('/events', async (_req, res) => {
     tags: Array.isArray(d.tags) ? d.tags : []
   }));
   res.json(normalized);
-});
+}));
 
 const createEventSchema = z.object({
   title: z.string().min(1),
@@ -53,9 +64,9 @@ function requireRole(req: any, res: any, next: any) {
   }
 }
 
-app.post('/events', requireRole, async (req, res) => {
+app.post('/events', requireRole, asyncHandler(async (req, res) => {
   const parsed = createEventSchema.safeParse(req.body || {});
-  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  if (!parsed.success) throw new AppError(400, 'INVALID_PAYLOAD', 'Invalid payload');
   const { title, description, date, location, tags } = parsed.data as any;
   const event: any = {
     title,
@@ -67,13 +78,13 @@ app.post('/events', requireRole, async (req, res) => {
   };
   const result = await eventsCol.insertOne(event);
   res.status(201).json({ _id: result.insertedId, ...event });
-});
+}));
 
-app.get('/events/:id', async (req, res) => {
+app.get('/events/:id', asyncHandler(async (req, res) => {
   const id = req.params.id;
   try {
     const doc = await eventsCol.findOne({ _id: new ObjectId(id) });
-    if (!doc) return res.status(404).json({ error: 'not found' });
+    if (!doc) throw new AppError(404, 'NOT_FOUND', 'Event not found');
     res.json({
       _id: doc._id,
       title: doc.title,
@@ -82,10 +93,11 @@ app.get('/events/:id', async (req, res) => {
       location: (doc as any).location ?? null,
       tags: Array.isArray((doc as any).tags) ? (doc as any).tags : []
     });
-  } catch {
-    res.status(400).json({ error: 'invalid id' });
+  } catch (err) {
+    if (String(err).includes('BSONTypeError')) throw new AppError(400, 'INVALID_ID', 'Invalid ID');
+    throw err;
   }
-});
+}));
 
 const updateEventSchema = z.object({
   title: z.string().min(1).optional(),
@@ -95,30 +107,22 @@ const updateEventSchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 
-app.put('/events/:id', requireRole, async (req, res) => {
+app.put('/events/:id', requireRole, asyncHandler(async (req, res) => {
   const id = req.params.id;
   const parsed = updateEventSchema.safeParse(req.body || {});
-  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  if (!parsed.success) throw new AppError(400, 'INVALID_PAYLOAD', 'Invalid payload');
   const update = parsed.data;
-  try {
-    const r = await eventsCol.findOneAndUpdate({ _id: new ObjectId(id) }, { $set: update }, { returnDocument: 'after' });
-    if (!r || !r.value) return res.status(404).json({ error: 'not found' });
-    res.json(r.value);
-  } catch {
-    res.status(400).json({ error: 'invalid id' });
-  }
-});
+  const r = await eventsCol.findOneAndUpdate({ _id: new ObjectId(id) }, { $set: update }, { returnDocument: 'after' });
+  if (!r || !r.value) throw new AppError(404, 'NOT_FOUND', 'Event not found');
+  res.json(r.value);
+}));
 
-app.delete('/events/:id', requireRole, async (req, res) => {
+app.delete('/events/:id', requireRole, asyncHandler(async (req, res) => {
   const id = req.params.id;
-  try {
-    const r = await eventsCol.deleteOne({ _id: new ObjectId(id) });
-    if (r.deletedCount === 0) return res.status(404).json({ error: 'not found' });
-    res.status(204).send();
-  } catch {
-    res.status(400).json({ error: 'invalid id' });
-  }
-});
+  const r = await eventsCol.deleteOne({ _id: new ObjectId(id) });
+  if (r.deletedCount === 0) throw new AppError(404, 'NOT_FOUND', 'Event not found');
+  res.status(204).send();
+}));
 
 async function start() {
   const db = await getMongoDb(MONGO_URL);

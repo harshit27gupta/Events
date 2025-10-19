@@ -17,8 +17,8 @@
     "node": ">=20.0.0"
   },
   "devDependencies": {
-    "@types/node": "^20.14.12"
+    "@types/node": "^20.14.12",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.1.4"
   }
 }
-
-

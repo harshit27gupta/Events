@@ -76,11 +76,17 @@ export function CheckoutPage() {
     if (!intentId || !clientSecret) return;
     setBusy(true);
     try {
-      await api.post('/api/orders/payments/confirm', { paymentIntentId: intentId, clientSecret });
-      toast.success('Payment confirmed');
+      const r = await api.post('/api/orders/payments/confirm', { paymentIntentId: intentId, clientSecret });
+      toast.success(`Payment confirmed [Request ID: ${r.headers['x-request-id']}]`);
       setPaid(true);
     } catch (e: any) {
-      toast.error(e?.response?.data?.error || 'Failed to confirm payment');
+      const status = e?.response?.status;
+      const requestId = e?.response?.headers['x-request-id'] || 'unknown';
+      if (status === 409) {
+        toast.error(`Conflict detected while confirming payment. Try again. [Request ID: ${requestId}]`);
+      } else {
+        toast.error(`Failed to confirm payment [Request ID: ${requestId}]`);
+      }
     } finally {
       setBusy(false);
     }
@@ -99,13 +105,22 @@ export function CheckoutPage() {
       }
       const headers = { 'Idempotency-Key': getIdempotencyKey() } as any;
       const r = await api.post('/api/orders/purchase', { eventId, holdId, seatIds, paymentIntentId: intentId }, { headers });
+      toast.success(`Booking confirmed [Request ID: ${r.headers['x-request-id']}]`);
       // Clear any local hold artifacts
       try { localStorage.removeItem(`hold:${eventId}`); } catch {}
-      toast.success('Booking confirmed');
       navigate('/orders', { state: { order: r.data } });
     } catch (e: any) {
-      const msg = e?.response?.data?.error || 'Failed to complete purchase';
-      toast.error(msg);
+      const status = e?.response?.status;
+      const requestId = e?.response?.headers['x-request-id'] || 'unknown';
+      if (status === 409) {
+        toast.error(`Hold conflict detected. Please retry. [Request ID: ${requestId}]`);
+      } else if (status === 402) {
+        toast.error(`Payment required to complete booking. [Request ID: ${requestId}]`);
+      } else if (status === 404) {
+        toast.error(`Seats no longer available. Please choose again. [Request ID: ${requestId}]`);
+      } else {
+        toast.error(`Failed to complete purchase [Request ID: ${requestId}]`);
+      }
     } finally {
       setBusy(false);
     }

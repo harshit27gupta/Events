@@ -5,16 +5,43 @@ import { api } from '../../lib/api';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { CalendarDays, CalendarPlus, CheckCircle2, ChevronRight, Download, ExternalLink, MapPin, Package, Share2, Ticket } from 'lucide-react';
+import { toast } from 'sonner';
 
 export function OrdersPage() {
   const { data: me, isLoading } = useAuth();
   const location = useLocation();
-  const { data } = useQuery({
+  const { data, isError, refetch } = useQuery({
     queryKey: ['orders'],
     queryFn: async () => (await api.get('/api/orders/orders')).data,
     enabled: !!me
   });
   const prefersReducedMotion = useReducedMotion();
+
+  // Define callbacks before any conditional returns to preserve hooks order across renders
+  const openTicket = React.useCallback((order: any | null | undefined) => {
+    if (!order) return;
+    const orderId = order.orderId || order._id;
+    if (!orderId) return;
+    const url = `/ticket/${encodeURIComponent(orderId)}`;
+    const full = window.location.origin + url;
+    try {
+      const newWindow = window.open(full, '_blank', 'noopener,noreferrer');
+      if (!newWindow) {
+        window.location.assign(url);
+      }
+    } catch (err) {
+      window.location.assign(url);
+    }
+  }, []);
+  const handleShare = React.useCallback(() => {
+    const shareUrl = window.location.origin + '/orders';
+    const title = 'I just booked tickets on events.ai!';
+    if ((navigator as any).share) {
+      (navigator as any).share({ title, url: shareUrl }).catch(() => {});
+    } else {
+      try { navigator.clipboard.writeText(shareUrl); } catch {}
+    }
+  }, []);
 
   // Compute derived order lists before any conditional returns to keep hook order stable
   const justCreated = (location.state as any)?.order;
@@ -77,31 +104,18 @@ export function OrdersPage() {
       </div>
     );
   }
+
+  if (isError) {
+    return (
+      <div className="glass p-6 text-center text-red-500">
+        <div className="text-lg font-semibold mb-1">Failed to load orders</div>
+        <div className="text-neutral-400">An error occurred while loading your orders. Please try again later.</div>
+        <button onClick={() => refetch()} className="mt-2 px-4 py-2 rounded bg-red-600 text-white">Retry</button>
+      </div>
+    );
+  }
+
   const ticketUrlFor = (order: any | null | undefined) => order ? `/ticket/${encodeURIComponent(order.orderId || order._id)}` : '#';
-  const openTicket = React.useCallback((order: any | null | undefined) => {
-    if (!order) return;
-    const orderId = order.orderId || order._id;
-    if (!orderId) return;
-    const url = `/ticket/${encodeURIComponent(orderId)}`;
-    const full = window.location.origin + url;
-    try { 
-      const newWindow = window.open(full, '_blank', 'noopener,noreferrer');
-      if (!newWindow) {
-        window.location.assign(url);
-      }
-    } catch (err) {
-      window.location.assign(url); 
-    }
-  }, []);
-  const handleShare = React.useCallback(() => {
-    const shareUrl = window.location.origin + '/orders';
-    const title = 'I just booked tickets on events.ai!';
-    if ((navigator as any).share) {
-      (navigator as any).share({ title, url: shareUrl }).catch(() => {});
-    } else {
-      try { navigator.clipboard.writeText(shareUrl); } catch {}
-    }
-  }, []);
   const calendarUrl = (evt?: any) => {
     if (!evt) return '#';
     const start = new Date(evt.date);
